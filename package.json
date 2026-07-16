@@ -1,0 +1,25 @@
+{
+  "name": "herdr-claude-auto-retry",
+  "version": "1.0.0",
+  "description": "herdr plugin that waits out Anthropic rate limits and auto-resumes Claude Code panes, with no tmux and no shell wrapper",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT",
+  "author": "mo-arvan",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["herdr", "herdr-plugin", "claude", "claude-code", "rate-limit", "retry", "anthropic"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mo-arvan/herdr-claude-auto-retry.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mo-arvan/herdr-claude-auto-retry/issues"
+  },
+  "homepage": "https://github.com/mo-arvan/herdr-claude-auto-retry#readme",
+  "files": ["bin/", "src/", "launch.sh", "herdr-plugin.toml", "LICENSE", "README.md"]
+}

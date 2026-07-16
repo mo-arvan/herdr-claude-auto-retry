@@ -1,0 +1,224 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { stripAnsi, isRateLimited, findRateLimitMessage, classifyLimit, latestOutputBlock } from '../src/patterns.js';
+import { DEFAULT_CONFIG } from '../src/config.js';
+
+test('stripAnsi removes CSI, OSC, and hyperlink sequences', () => {
+  assert.equal(stripAnsi('\x1b[31mred\x1b[0m'), 'red');
+  assert.equal(stripAnsi('\x1b]0;title\x07hi'), 'hi');
+  assert.equal(stripAnsi('\x1b]8;;https://x\x1b\\link\x1b]8;;\x1b\\'), 'link');
+});
+
+test('detects classic single-line limit messages', () => {
+  assert.ok(isRateLimited('5-hour limit reached - resets 3pm (UTC)'));
+  assert.ok(isRateLimited("You've hit your limit · resets 3pm (Europe/Dublin)"));
+  assert.ok(isRateLimited('Claude usage limit reached. Resets at 2pm'));
+});
+
+test('detects multi-line TUI render (limit and resets on separate lines)', () => {
+  const text = ["⚠ You've hit your limit", '· resets 3pm (UTC)'].join('\n');
+  assert.ok(isRateLimited(text));
+});
+
+// Issue #15 / #13 / #18: "session limit" / "weekly limit" wording.
+test('detects current "session limit" wording (#15)', () => {
+  assert.ok(isRateLimited("You've hit your session limit · resets 4:50pm (Asia/Shanghai)"));
+});
+
+test('detects "weekly limit" wording (#13)', () => {
+  assert.ok(isRateLimited('Weekly limit reached · resets 9am'));
+});
+
+test('does not false-positive on benign text mentioning limit without a reset', () => {
+  assert.ok(!isRateLimited('We hit the rate limit ceiling in the design doc yesterday.'));
+  assert.ok(!isRateLimited('Set your session limit in settings.'));
+});
+
+// Claude shows a proactive usage banner in its persistent status line ("You've
+// used 75% of your weekly limit · resets 10pm"). That is a warning, not a limit
+// that stopped the session, and it sits in the footer of a healthy idle pane. A
+// real blocked state says "hit" / "reached" instead. These strings are taken
+// verbatim from live logs, where every rate-limit activation was one of these.
+test('a "used N% of your ... limit" usage warning is NOT a rate limit', () => {
+  assert.equal(classifyLimit("⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents        You've used 75% of your weekly limit · resets 10pm (America/Chicago)"), null);
+  assert.equal(classifyLimit("You've used 97% of your session limit · resets 6pm (America/Chicago) · /upgrade to keep using Claude Code"), null);
+  assert.equal(classifyLimit("You've used 80% of your weekly limit · resets 9am"), null);
+});
+
+test('a real blocked limit still fires (hit / reached wording)', () => {
+  assert.equal(classifyLimit("You've hit your session limit · resets 1am (America/Chicago)"), 'reset');
+  assert.equal(classifyLimit('Weekly limit reached · resets 9am'), 'reset');
+  assert.equal(classifyLimit("You've hit your limit · resets 3pm (UTC)"), 'reset');
+  // Claude also renders a real limit as a tool-result line; the leading glyph
+  // must not change the verdict.
+  assert.equal(classifyLimit("⎿ You've hit your session limit · resets 9am"), 'reset');
+});
+
+// The escape hatch: customPatterns short-circuit ahead of the built-ins, so if
+// Claude ever blocks with a percentage form, config can still force-detect it.
+test('customPatterns can force-detect a percentage form without a code change', () => {
+  assert.equal(classifyLimit("You've used 100% of your session limit · resets 1am", 0, ['used 100% of your']), 'reset');
+});
+
+// Issue #19: the interactive /rate-limit-options menu still reads as a limit
+// (recovery dismisses any menu unconditionally with Escape, so no menu-specific
+// detection is needed).
+test('detects a rate limit inside the /rate-limit-options menu (#19)', () => {
+  const menu = [
+    "You've hit your session limit · resets 6:50pm (Europe/London)",
+    'What do you want to do?',
+    '❯ 1. Upgrade your plan',
+    '  2. Stop and wait for limit to reset',
+  ].join('\n');
+  assert.ok(isRateLimited(menu));
+});
+
+test('findRateLimitMessage returns the resets line for parsing', () => {
+  const text = ["You've hit your session limit", '· resets 6:50pm (Europe/London)'].join('\n');
+  assert.match(findRateLimitMessage(text), /resets 6:50pm/);
+});
+
+// Issue #6: a stale earlier limit higher in the scrollback must not mis-time the
+// wait; extract the reset line nearest the most recent limit line.
+test('findRateLimitMessage prefers the reset near the most recent limit line', () => {
+  const text = [
+    'You hit your limit · resets 9am (UTC)', // stale, earlier in the buffer
+    'work', 'work', 'work', 'work', 'work', 'work', 'work',
+    "You've hit your session limit", // current event
+    '· resets 3pm (UTC)',
+  ].join('\n');
+  assert.match(findRateLimitMessage(text), /resets 3pm/);
+});
+
+test('custom patterns are honored', () => {
+  assert.ok(isRateLimited('SOME WEIRD COOLDOWN BANNER', ['weird cooldown']));
+});
+
+// Anticipating that Claude's wording changes: users add new limit or server-error
+// phrasings via config, no code edit needed.
+test('customPatterns catch new limit wording; customTransientPatterns catch new server-error wording', () => {
+  assert.equal(classifyLimit('New usage cap hit for this account', 0, ['usage cap hit']), 'reset');
+  assert.equal(classifyLimit('⏺ API Error: Service is busy, try later', 0, [], ['service is busy']), 'transient');
+});
+
+// The retry message is echoed into the pane's input line, so if it contained a
+// detector keyword the monitor would match its own nudge and loop forever. The
+// default must trip nothing - guard against re-introducing a trigger word.
+test('the default retry message never matches a detector (no self-trigger loop)', () => {
+  const m = DEFAULT_CONFIG.retryMessage;
+  assert.equal(isRateLimited(m), false, 'retryMessage must not look like a rate limit');
+  assert.equal(classifyLimit(m), null, 'retryMessage must not classify as any limit');
+  assert.equal(classifyLimit(`> ${m}`), null, 'nor when echoed in the input line');
+  assert.equal(classifyLimit(`❯ ${m}`), null, 'nor with the real input glyph Claude renders');
+});
+
+// Bottom-anchoring (the fix for the idle false-engage): rate-limit text scrolled
+// up in the transcript must not match; only the live footer counts.
+test('tailLines ignores rate-limit text scrolled up in the transcript', () => {
+  const buffer = [
+    "You've hit your session limit · resets 3pm (UTC)", // line 0, high in the buffer
+    ...Array(20).fill('normal conversation line'),
+    '> ', // live prompt at the bottom, no limit text
+  ].join('\n');
+  assert.ok(isRateLimited(buffer), 'matches without a tail window'); // whole-buffer scan
+  assert.ok(!isRateLimited(buffer, [], 6), 'does NOT match within the last 6 lines');
+});
+
+test('tailLines still matches a real limit sitting at the footer', () => {
+  const buffer = [
+    ...Array(20).fill('earlier conversation'),
+    "You've hit your session limit · resets 3pm (UTC)", // just above the prompt
+    '> ',
+  ].join('\n');
+  assert.ok(isRateLimited(buffer, [], 6), 'matches when the limit is in the footer');
+});
+
+// classifyLimit distinguishes a subscription limit (has a reset) from a
+// transient server throttle (no reset) - the latter is the API-error case that
+// slipped past detection entirely.
+test('classifyLimit: subscription limit with reset -> reset', () => {
+  assert.equal(classifyLimit("You've hit your session limit · resets 3pm (UTC)"), 'reset');
+});
+
+test('classifyLimit: transient server throttle (no reset time) -> transient', () => {
+  assert.equal(
+    classifyLimit('⏺ API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited'),
+    'transient',
+  );
+  assert.equal(classifyLimit('⏺ API Error: Overloaded'), 'transient');
+});
+
+test('classifyLimit: 5xx / retryable API errors -> transient', () => {
+  assert.equal(
+    classifyLimit('⏺ API Error: 500 Internal server error. This is a server-side issue, usually temporary - try again in a moment.'),
+    'transient',
+  );
+  assert.equal(classifyLimit('⏺ API Error: 503 Service Unavailable'), 'transient');
+  assert.equal(classifyLimit('⏺ API Error: 529 Overloaded'), 'transient');
+});
+
+test('classifyLimit: a connection drop mid-response -> transient', () => {
+  assert.equal(
+    classifyLimit('⏺ API Error: Connection closed mid-response. The response above may be incomplete.'),
+    'transient',
+  );
+  assert.equal(classifyLimit('⏺ API Error: Connection error.'), 'transient');
+  // ...but a bare mention of a closed connection (no "API Error:" prefix) is just
+  // normal output, not a live error.
+  assert.equal(classifyLimit('⏺ The connection was closed by the remote host in your test.'), null);
+});
+
+test('classifyLimit: permanent 4xx API errors are NOT retried', () => {
+  assert.equal(classifyLimit('⏺ API Error: 400 Bad Request'), null);
+  assert.equal(classifyLimit('⏺ API Error: 401 invalid x-api-key'), null);
+  assert.equal(classifyLimit('⏺ API Error: 404 model not found'), null);
+});
+
+test('classifyLimit: normal output -> null', () => {
+  assert.equal(classifyLimit('Reference set: 76 items'), null);
+  // The thinking-time spinner shows for any turn, success or failure, so it must
+  // never read as an error on its own.
+  assert.equal(classifyLimit('✻ Cogitated for 1s'), null);
+});
+
+test('classifyLimit respects the tail window', () => {
+  const buf = ['API Error: Server is temporarily limiting requests · Rate limited', ...Array(20).fill('x'), '> '].join('\n');
+  assert.equal(classifyLimit(buf), 'transient'); // whole buffer
+  assert.equal(classifyLimit(buf, 6), null); // footer only
+});
+
+// The recovery guard: a transient error is only "live" while it is the latest
+// output block. A real response below it (Claude resumed) means recovered.
+test('classifyLimit: a transient error with a real response below it -> null (recovered)', () => {
+  const recovered = [
+    '⏺ API Error: 500 Internal server error.', // old error, scrolled up
+    '',
+    '✻ Cogitated for 1s',
+    '',
+    '❯ Continue where you left off.',
+    '',
+    '⏺ All set - the file is written.', // latest output: a real response
+  ].join('\n');
+  assert.equal(classifyLimit(recovered), null);
+  // ...but while the error IS the latest output block, it still classifies.
+  assert.equal(classifyLimit('⏺ API Error: 500 Internal server error.'), 'transient');
+});
+
+// The self-trigger guard: the monitor's own nudge echoed in the ❯ input line must
+// never be read as the live error, even if a (neutral) message sat next to one.
+test('classifyLimit: the echoed nudge in the input line is ignored', () => {
+  const afterNudge = [
+    '⏺ API Error: 529 Overloaded.', // the error we are waiting on (latest ⏺)
+    '',
+    '❯ Continue where you left off.', // our echoed nudge, below the error
+  ].join('\n');
+  // The latest OUTPUT block is the error (the ❯ line is input, not output), so it
+  // is still transient - the echo neither creates nor masks a detection.
+  assert.equal(classifyLimit(afterNudge), 'transient');
+});
+
+test('latestOutputBlock returns the last ⏺/⎿ block, else null', () => {
+  assert.equal(latestOutputBlock('plain text, no markers'), null);
+  assert.equal(latestOutputBlock('⏺ first\n\n❯ in\n\n⏺ second'), '⏺ second');
+  assert.equal(latestOutputBlock('⏺ wrapped line one\n  continues here\n\n✻ Worked for 2s'), '⏺ wrapped line one\n  continues here');
+});

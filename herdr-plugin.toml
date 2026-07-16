@@ -1,0 +1,63 @@
+id = "claude-auto-retry"
+name = "Claude Auto Retry"
+version = "1.0.0"
+min_herdr_version = "0.7.0"
+description = "Wait out Anthropic rate limits and auto-resume Claude Code panes, herdr-native (no tmux, no shell wrapper)."
+platforms = ["linux", "macos"]
+
+# Commands run through launch.sh (invoked via an absolute /bin/sh) because herdr
+# spawns plugin commands with no shell and with the server's PATH, which often
+# lacks nvm/homebrew/mise node dirs. launch.sh resolves node, then runs
+# bin/<entry>.js. Set HERDR_NODE to override node resolution.
+
+# Auto-start a monitor whenever herdr first detects a Claude Code agent in a pane.
+# This is the install-and-forget path: no shell wrapper, no tmux.
+[[events]]
+on = "pane.agent_detected"
+command = ["/bin/sh", "launch.sh", "hook-agent-detected"]
+
+# Re-establish a monitor on any pane activity. agent_detected only fires once per
+# new agent, so after a herdr restart (panes restored with new terminal ids) the
+# monitors die and are never replaced. This hook makes coverage self-heal: the
+# spawn is deduped by the lock, so it is a no-op for already-monitored panes.
+[[events]]
+on = "pane.agent_status_changed"
+command = ["/bin/sh", "launch.sh", "hook-agent-detected"]
+
+# Attach monitors to every Claude pane already open (run once after install, or
+# bind to a key). The hook above only fires for agents detected after install.
+[[actions]]
+id = "watch-all"
+title = "Claude Auto Retry: watch all Claude panes"
+description = "Attach an auto-retry monitor to every running Claude Code pane."
+contexts = ["global"]
+command = ["/bin/sh", "launch.sh", "watch-all"]
+
+# Arm the focused pane explicitly.
+[[actions]]
+id = "arm"
+title = "Claude Auto Retry: watch this pane"
+description = "Attach an auto-retry monitor to the focused Claude Code pane."
+contexts = ["pane"]
+command = ["/bin/sh", "launch.sh", "arm"]
+
+[[actions]]
+id = "status"
+title = "Claude Auto Retry: status"
+description = "Show active monitors and recent activity."
+contexts = ["global"]
+command = ["/bin/sh", "launch.sh", "status"]
+
+[[actions]]
+id = "stop"
+title = "Claude Auto Retry: stop all"
+description = "Stop all auto-retry monitors."
+contexts = ["global"]
+command = ["/bin/sh", "launch.sh", "stop"]
+
+[[actions]]
+id = "logs"
+title = "Claude Auto Retry: logs"
+description = "Print recent auto-retry log lines."
+contexts = ["global"]
+command = ["/bin/sh", "launch.sh", "logs"]

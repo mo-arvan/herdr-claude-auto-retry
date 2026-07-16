@@ -1,0 +1,29 @@
+name: test
+
+"on":
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: node ${{ matrix.node-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node-version: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      # Zero runtime deps and Node's built-in test runner, so no install step.
+      - run: npm test
+
+  manifest:
+    name: validate herdr-plugin.toml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -c "import tomllib;tomllib.load(open('herdr-plugin.toml','rb'))"

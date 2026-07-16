@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.DS_Store
+
+# Internal working docs - kept local, not part of the public release.
+PROGRESS.md

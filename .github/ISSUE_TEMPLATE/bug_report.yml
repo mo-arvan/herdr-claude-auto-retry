@@ -1,0 +1,96 @@
+name: Bug report
+description: Report a bug in claude-auto-retry (the herdr plugin that auto-resumes Claude Code after rate limits).
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. This plugin waits out Anthropic rate limits and resumes Claude Code via herdr.
+        Most bugs are one of: node not found under herdr's PATH, the rate-limit text not matching the patterns, or the resume not landing. The fields below cover all three. Logs are the fastest path to a fix.
+
+  - type: input
+    id: herdr-version
+    attributes:
+      label: herdr version
+      description: Output of `herdr --version`. This plugin needs herdr >= 0.7.0.
+      placeholder: "0.7.0"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      description: Output of `node --version`. This plugin needs Node >= 18.
+      placeholder: "v20.11.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: version-manager
+    attributes:
+      label: Node version manager
+      description: How node is installed. herdr launches plugin commands with the server's PATH, so version-manager node is the usual cause of "could not find a node binary".
+      options:
+        - none (system / homebrew node on PATH)
+        - fnm
+        - nvm
+        - mise
+        - asdf
+        - volta
+        - other
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      description: Distro or macOS version, and architecture. The plugin targets linux and macos.
+      placeholder: "macOS 14.5 (arm64) / Ubuntu 24.04 (x86_64)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: rate-limit-text
+    attributes:
+      label: Exact rate-limit text Claude showed
+      description: Copy the exact message Claude Code displayed, verbatim, including the resets line (e.g. the "resets 6:50pm" part) and the /rate-limit-options menu if one appeared. Detection keys off this wording, so paste it as-is, do not paraphrase.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: "Run `herdr plugin action invoke claude-auto-retry.logs` and paste the relevant lines (or the whole output if short). Logs also live under the plugin state dir at logs/YYYY-MM-DD.log."
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, what you expected, and what actually happened.
+      value: |
+        1.
+        2.
+        3.
+
+        Expected:
+
+        Actual:
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Config (optional)
+      description: "Contents of claude-auto-retry.json if you set one (find the dir with `herdr plugin config-dir claude-auto-retry`). Omit if you use defaults."
+      render: json
+    validations:
+      required: false
