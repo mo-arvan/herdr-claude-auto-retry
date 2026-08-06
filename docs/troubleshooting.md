@@ -26,7 +26,7 @@ A transient server error, retried with backoff until it clears:
 [10:01:30] proj/p1  server error cleared; monitoring
 ```
 
-While a monitor waits, its pane carries a `retry engaged` label in herdr's agent list, and the label clears the moment the session resumes. If you see these log lines and the label, it is working. If not, continue below.
+While a monitor waits, its pane carries a `retry engaged` label, and the label clears the moment the session resumes. The label is a pane token, so it is only drawn if you added `$retry` to an agent row ([Configuration](configuration.md#showing-the-engaged-label)); `herdr pane get <pane_id>` shows it either way under `tokens`. If you see these log lines and the label, it is working. If not, continue below.
 
 ## Gather state
 

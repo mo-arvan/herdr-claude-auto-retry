@@ -71,7 +71,7 @@ test('monitor: detect -> engage label -> recover (esc/text/enter) -> clear on re
   try {
     const fired = await waitFor(() => {
       const s = t.sends();
-      const label = s.some((c) => c[0] === 'report-metadata' && c.includes('retry engaged'));
+      const label = s.some((c) => c[0] === 'report-metadata' && c.includes('retry=retry engaged'));
       const enter = s.some((c) => c[0] === 'send-keys' && c.includes('enter'));
       return label && enter ? s : null;
     });
@@ -83,7 +83,7 @@ test('monitor: detect -> engage label -> recover (esc/text/enter) -> clear on re
       panes: [{ pane_id: 'w1:p1', terminal_id: 't1', agent: 'claude', agent_status: 'working', cwd: '/x/proj' }],
       read: 'back to work',
     });
-    const cleared = await waitFor(() => t.sends().some((c) => c[0] === 'report-metadata' && c.includes('--clear-custom-status')));
+    const cleared = await waitFor(() => t.sends().some((c) => c[0] === 'report-metadata' && c.includes('--clear-token')));
     assert.ok(cleared, 'engaged label cleared once the pane resumes');
   } finally {
     proc.kill('SIGTERM');

@@ -25,7 +25,19 @@ Running monitors re-read this file every poll, so edits take effect on their own
 | `menuDismissDelayMs` | `300` | Pause after Escape. |
 | `submitDelayMs` | `400` | Pause between typing the message and pressing Enter. |
 | `eligibleStates` | `["idle","blocked","done"]` | Pane states the plugin may act on. `working` is never allowed (it is stripped in validation). |
-| `engagedLabel` | `"retry engaged"` | Sidebar label shown on a pane while it waits out a limit. |
+| `engagedLabel` | `"retry engaged"` | Label reported on a pane while it waits out a limit. See below for showing it. |
+
+## Showing the engaged label
+
+The label is reported to herdr as a pane token named `retry` (herdr >= 0.7.4). Tokens are only
+drawn where you ask for them, so add `$retry` to an agent row in your `~/.config/herdr/config.toml`:
+
+```toml
+[ui.sidebar.agents]
+rows = [["state_icon", "workspace", "tab"], ["agent", "$retry"]]
+```
+
+The token carries a TTL, so it disappears on its own if a monitor dies.
 
 ## Adjusting detection when Claude's wording changes
 

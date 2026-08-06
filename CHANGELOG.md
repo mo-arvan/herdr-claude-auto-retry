@@ -2,6 +2,17 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- The engaged label never appeared. `herdr pane report-metadata` dropped `--custom-status` and
+  `--clear-custom-status` in herdr 0.7.4, so every label call failed with `unknown option`. Because
+  `run()` resolves on any exit code and the result is not inspected, the failure was silent: retries
+  worked, the label did not. The label is now reported as a `retry` pane token
+  (`--token retry=…` / `--clear-token retry`), and `min_herdr_version` moves to `0.7.4` accordingly.
+  Tokens render where the user places `$retry` in `[ui.sidebar.agents]`, which the docs now cover.
+
 ## [1.0.0] - 2026-07-02
 
 Initial release.

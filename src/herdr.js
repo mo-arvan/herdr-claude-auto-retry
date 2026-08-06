@@ -5,6 +5,8 @@ function herdrBin() {
   return process.env.HERDR_BIN_PATH || 'herdr';
 }
 
+const TOKEN_NAME = 'retry';
+
 function run(args, { timeoutMs = 10_000 } = {}) {
   return new Promise((resolve) => {
     execFile(herdrBin(), args, { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
@@ -64,13 +66,16 @@ export function createHerdr() {
     return run(['pane', 'send-keys', paneId, ...keys]);
   }
 
+  // Sidebar token carrying the engaged label. herdr dropped --custom-status in
+  // 0.7.4; --token NAME=VALUE is the supported form, rendered wherever the user
+  // puts $retry in [ui.sidebar.agents].
   async function reportMetadata(paneId, { customStatus, clear = false, agent, ttlMs } = {}) {
     const args = ['pane', 'report-metadata', paneId, '--source', 'claude-auto-retry'];
     if (agent) args.push('--agent', agent);
     if (clear) {
-      args.push('--clear-custom-status');
+      args.push('--clear-token', TOKEN_NAME);
     } else {
-      if (customStatus != null) args.push('--custom-status', customStatus);
+      if (customStatus != null) args.push('--token', `${TOKEN_NAME}=${customStatus}`);
       if (ttlMs != null) args.push('--ttl-ms', String(ttlMs));
     }
     return run(args);
