@@ -295,7 +295,13 @@ async function monitor() {
         const next = humanDur(state.waitUntil - Date.now());
         logger.info(isTransient ? `nudged (attempt ${state.attempts}); next retry in ${next}` : `resumed (attempt ${state.attempts})`);
       }
-      if (result === 'user-continued') logger.info(isTransient ? 'server error cleared; monitoring' : 'limit cleared; monitoring');
+      // Name the stand-down reason. "limit cleared" used to cover both a real manual
+      // resume and the monitor losing sight of the banner, which made the two
+      // indistinguishable in the log after the fact.
+      if (result === 'user-continued') {
+        const why = state.standDownReason ? ` (${state.standDownReason})` : '';
+        logger.info(isTransient ? `server error cleared; monitoring${why}` : `limit cleared; monitoring${why}`);
+      }
       if (result === 'max-retries' && lastResult !== 'max-retries') logger.warn(`max retries (${config.maxRetries}) reached; cooling down`);
       if (result === 'skipped-not-claude') logger.warn('pane no longer a Claude agent; skipping send');
       lastResult = result;

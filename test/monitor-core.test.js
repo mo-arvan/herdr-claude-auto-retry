@@ -259,3 +259,112 @@ test('does not read the pane while waiting before the deadline', async () => {
   assert.equal(await processOneTick(state, a, CONFIG, 1000), 'waiting');
   assert.equal(reads, 0);
 });
+
+// ── The 2026-08-12 incident ────────────────────────────────────────────────
+// A session limit landed at 20:37:41 and the plugin stayed silent until 20:44:19,
+// because Claude Code held a spinner up for those 6.5 minutes while it drained
+// queued teammate messages - so herdr reported the pane as "working" and the
+// eligibility gate discarded the limit. Detection must not depend on the pane
+// having gone idle yet.
+function limitScreen(counter, trailing = []) {
+  return [
+    '⏺ Bash(git push origin main)',
+    '  ⎿  main -> main',
+    '',
+    "⏺ You've hit your session limit · resets 8:50pm (Asia/Omsk)",
+    '',
+    `✻ Cooking… (${counter}m 14s · ↓ 8.1k tokens)`,
+    '─────────────────────────────────────────',
+    '❯',
+    '─────────────────────────────────────────',
+    `  proj git:(main) | Opus 5 (1M context) | ctx: ${counter}%`,
+    `  5h: 30% (resets in ${counter}m) | 7d: 29% (resets in 5d8h)`,
+    '  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ...trailing,
+  ].join('\n');
+}
+
+test('a working pane arms the wait when the limit is the newest output', async () => {
+  const state = createMonitorState();
+  const a = adapter({ text: limitScreen(2), eligible: false });
+  assert.equal(await processOneTick(state, a, CONFIG, 0), 'waiting');
+  assert.equal(state.status, 'waiting');
+  assert.equal(a.recovered, 0, 'arming never types into a working pane');
+});
+
+// The narrow gate that keeps the above from re-opening the false-resume hole the
+// eligibility check was there to close: on a working pane, a limit anywhere but
+// the newest output block is scrollback, and scrollback is not news.
+test('a working pane ignores a limit that only sits in the scrollback', async () => {
+  const state = createMonitorState();
+  const scrollback = [
+    "⏺ You've hit your session limit · resets 8:50pm (Asia/Omsk)",
+    '',
+    '⏺ Done - pushed the fix.',
+  ].join('\n');
+  const a = adapter({ text: scrollback, eligible: false });
+  assert.equal(await processOneTick(state, a, CONFIG, 0), 'monitoring');
+  assert.equal(state.status, 'monitoring');
+});
+
+// A 5xx on a busy pane is Claude Code's own retry to make, not ours - it would
+// mean typing into a pane that is still mid-response.
+test('a working pane ignores a transient server error', async () => {
+  const state = createMonitorState();
+  const a = adapter({ text: '⏺ API Error: 529 Overloaded.', eligible: false });
+  assert.equal(await processOneTick(state, a, CONFIG, 0), 'monitoring');
+  assert.equal(a.recovered, 0);
+});
+
+// End to end on yesterday's sequence: arm while the spinner is still up, then
+// resume once the reset passes and the pane has actually gone idle.
+test('armed while working, resumes once the deadline passes and the pane is idle', async () => {
+  const state = createMonitorState();
+  const a = adapter({ text: limitScreen(2), eligible: false });
+  assert.equal(await processOneTick(state, a, CONFIG, 0), 'waiting');
+
+  a._eligible = true; // spinner gone, pane parked on the limit
+  a._text = limitScreen(7); // only the chrome moved on
+  assert.equal(await processOneTick(state, a, CONFIG, state.waitUntil + 1), 'retried');
+  assert.equal(a.recovered, 1);
+});
+
+// The stand-down decision used to be "no banner in the tail => the user must have
+// continued", which is a guess: the banner scrolls out of a 15-line window on its
+// own. These two record the evidence that is now required instead, and the reason
+// each one writes to the log - previously both wrote the same line.
+test('stands down when the pane is busy again, and says so', async () => {
+  const state = createMonitorState();
+  const a = adapter({ text: limitScreen(2), eligible: true });
+  await processOneTick(state, a, CONFIG, 0);
+  a._eligible = false;
+  a._text = '⏺ Continuing with the review.';
+  assert.equal(await processOneTick(state, a, CONFIG, state.waitUntil + 1), 'user-continued');
+  assert.equal(state.standDownReason, 'pane busy');
+  assert.equal(a.recovered, 0);
+});
+
+test('stands down when new output appeared, and says so', async () => {
+  const state = createMonitorState();
+  const a = adapter({ text: limitScreen(2), eligible: true });
+  await processOneTick(state, a, CONFIG, 0);
+  // What a manual "carry on" looks like a moment later: the transcript has moved
+  // past the limit and the banner is no longer in the window.
+  a._text = ['⏺ Continuing with the review.', '', '✻ Cooking… (3s)', '❯'].join('\n');
+  assert.equal(await processOneTick(state, a, CONFIG, state.waitUntil + 1), 'user-continued');
+  assert.equal(state.standDownReason, 'new output');
+  assert.equal(a.recovered, 0);
+});
+
+// The counterpart: an idle pane whose transcript has not moved at all is still
+// parked on the limit, so chrome churn alone must never buy a stand-down.
+test('chrome churn alone is not evidence the session resumed', async () => {
+  const state = createMonitorState();
+  const a = adapter({ text: limitScreen(2), eligible: true });
+  await processOneTick(state, a, CONFIG, 0);
+  const fp = state.limitFingerprint;
+  a._text = limitScreen(58); // spinner, ctx %, usage counters all moved
+  assert.equal(await processOneTick(state, a, CONFIG, state.waitUntil + 1), 'retried');
+  assert.equal(a.recovered, 1);
+  assert.equal(state.limitFingerprint, fp, 'the baseline survives a redraw');
+});

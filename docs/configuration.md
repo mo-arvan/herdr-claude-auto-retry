@@ -20,11 +20,11 @@ Running monitors re-read this file every poll, so edits take effect on their own
 | `customTransientPatterns` | `[]` | Extra regexes treated as a transient server error (short backoff). See below. |
 | `readSource` | `"detection"` | herdr read source: `recent`, `recent-unwrapped`, `visible`, or `detection`. |
 | `readLines` | `25` | Lines read per check. |
-| `detectionTailLines` | `15` | Only the last N lines (the live footer) are scanned for a limit. |
+| `detectionTailLines` | `15` | Only the last N lines (the live footer) are scanned for a limit. Roughly ten of a Claude pane's last lines are chrome (input box, statusline, mode hints), so raise this (with `readLines`) if a banner leaves the window during a long wait. |
 | `dismissMenu` | `true` | Send Escape before resuming (dismisses the `/rate-limit-options` menu). |
 | `menuDismissDelayMs` | `300` | Pause after Escape. |
 | `submitDelayMs` | `400` | Pause between typing the message and pressing Enter. |
-| `eligibleStates` | `["idle","blocked","done"]` | Pane states the plugin may act on. `working` is never allowed (it is stripped in validation). |
+| `eligibleStates` | `["idle","blocked","done"]` | Pane states the plugin may SEND to. `working` is never allowed (it is stripped in validation); a working pane can still arm a wait when the limit is its latest output block. |
 | `engagedLabel` | `"retry engaged"` | Sidebar label shown on a pane while it waits out a limit. |
 
 ## Adjusting detection when Claude's wording changes

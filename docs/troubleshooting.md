@@ -15,7 +15,7 @@ A subscription rate limit, waited out and resumed:
 ```
 [09:00:05] proj/p1  rate limit: "resets 3pm (UTC)" -> waiting 6h
 [15:00:35] proj/p1  resumed (attempt 1)
-[15:01:05] proj/p1  limit cleared; monitoring
+[15:01:05] proj/p1  limit cleared; monitoring (pane busy)
 ```
 
 A transient server error, retried with backoff until it clears:
@@ -23,8 +23,10 @@ A transient server error, retried with backoff until it clears:
 ```
 [10:00:00] proj/p1  server error: "API Error: 500 Internal server error" -> retry in 60s
 [10:01:00] proj/p1  nudged (attempt 1); next retry in 2m
-[10:01:30] proj/p1  server error cleared; monitoring
+[10:01:30] proj/p1  server error cleared; monitoring (new output)
 ```
+
+The parenthesised reason on a `cleared` line is the evidence the monitor stood down on: `pane busy` (Claude is working again) or `new output` (its latest output block changed). Standing down never happens just because the banner scrolled out of view.
 
 While a monitor waits, its pane carries a `retry engaged` label in herdr's agent list, and the label clears the moment the session resumes. If you see these log lines and the label, it is working. If not, continue below.
 
@@ -51,7 +53,7 @@ herdr plugin log list --plugin claude-auto-retry --limit 20
 Work through these in order; each has the command to check it.
 
 - Is a monitor running for that pane? The log shows a `started` line for each. If none is running, run `herdr plugin action invoke claude-auto-retry.watch-all`.
-- Is the pane stopped? The plugin acts only on `idle`, `blocked`, or `done`, never `working`. Read the state with `herdr pane get <pane-id>`. If Claude shows the limit while herdr still reports `working`, detection will not fire.
+- Is the pane stopped? The plugin SENDS only on `idle`, `blocked`, or `done`, never `working`. Read the state with `herdr pane get <pane-id>`. A `working` pane can still arm the wait, but only when the limit is the newest thing Claude printed; if the limit sits higher in the transcript of a working pane, detection will not fire.
 - Is the limit text in the footer? Detection scans only the last `detectionTailLines` lines (default 15). A limit that scrolled up is ignored. Inspect the footer with `herdr pane read <pane-id> --source detection --lines 25`.
 - Does the wording still match? If the footer clearly shows a limit but nothing fires, Claude's phrasing may have changed. Add the new phrasing via config; see "The wording changed" below.
 - Is it the plugin's own pane? A pane whose working directory is the plugin's own directory is never monitored, because it inherently shows limit-like text.
@@ -75,6 +77,7 @@ Claude Code's on-screen text is not a stable API, so a phrasing the plugin looks
 - This requires the pane to be stopped and limit-like text to be in the footer at the same time. The usual cause is limit-like text (a log, a doc, or a conversation about rate limits) sitting in the footer of an idle pane.
 - Never add `working` to `eligibleStates`. It is rejected in config validation for exactly this reason.
 - If a custom pattern is too broad, tighten `customPatterns` or `customTransientPatterns`.
+- Text that merely discusses limits is only partly excluded structurally: a rendered table row is ignored, but prose quoting a limit banner with a reset time within six lines still matches. A pane whose job is writing about rate limits (this plugin's own incident reports, for instance) is best excluded by keeping its cwd under `HERDR_PLUGIN_ROOT`, which is never monitored.
 
 ## It kept nudging the same pane
 
