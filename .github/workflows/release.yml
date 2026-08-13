@@ -1,0 +1,41 @@
+name: release
+
+# The remote half of the release. scripts/release.mjs commits and tags locally;
+# pushing the tag is the human gate, and this is what happens after it.
+"on":
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The tag is only as good as the tree it points at, so re-run the suite
+      # here rather than trusting the pre-tag run.
+      - run: npm test
+
+      - name: Check the tag matches the committed version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $pkg" >&2
+            exit 1
+          fi
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          node scripts/changelog.mjs "$version" > notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md

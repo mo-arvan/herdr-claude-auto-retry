@@ -181,6 +181,38 @@ test('classifyLimit: normal output -> null', () => {
   assert.equal(classifyLimit('✻ Cogitated for 1s'), null);
 });
 
+// Found live: a 7h stall. Claude renders a task list, prompt box, model line and
+// hint below the error, which pushed the "API Error" 18 lines up - outside the
+// 15-line tail window - so detection silently missed a genuinely stalled pane.
+// Transient detection is therefore anchored to the latest output block across the
+// whole read, not to a fixed line count.
+test('a transient error still detects when a task list pushes it out of the tail window', () => {
+  const footer = [
+    '⏺ Ran 1 shell command',
+    '',
+    '⏺ API Error: Connection closed mid-response. The response above may be incomplete.',
+    '',
+    '✻ Cooked for 1h 22m 18s',
+    '',
+    '  10 tasks (2 done, 1 in progress, 7 open)',
+    '  ◼ T-109: rewrite the parser behind a flag, with unit tests',
+    '  ◻ T-83: wire the retry budget into the client',
+    '  ◻ T-85: three fixes to the report exporter',
+    '  ◻ T-95: coverage gate plus an integration smoke test',
+    '  ◻ T-106: config validation pass',
+    '  … +3 pending, 2 completed',
+    '  new task? /clear to save 290.4k tokens',
+    '─'.repeat(60),
+    '❯',
+    '─'.repeat(60),
+    'Opus 5 (1M context)  |  ctx 29%',
+    '⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents',
+  ].join('\n');
+  assert.equal(classifyLimit(footer, 15), 'transient', 'must detect despite the 15-line tail window');
+  // ...and it still stops once Claude actually responds below the error.
+  assert.equal(classifyLimit(`${footer}\n\n⏺ Continuing with T-109.`, 15), null);
+});
+
 test('classifyLimit respects the tail window', () => {
   const buf = ['API Error: Server is temporarily limiting requests · Rate limited', ...Array(20).fill('x'), '> '].join('\n');
   assert.equal(classifyLimit(buf), 'transient'); // whole buffer
@@ -221,4 +253,43 @@ test('latestOutputBlock returns the last ⏺/⎿ block, else null', () => {
   assert.equal(latestOutputBlock('plain text, no markers'), null);
   assert.equal(latestOutputBlock('⏺ first\n\n❯ in\n\n⏺ second'), '⏺ second');
   assert.equal(latestOutputBlock('⏺ wrapped line one\n  continues here\n\n✻ Worked for 2s'), '⏺ wrapped line one\n  continues here');
+});
+
+
+// D18 anchored transient detection to the newest output block, which made the
+// tail fallback unreachable: a real screen almost always contains some ⏺ line,
+// so footer-form errors (the status-line wordings) stopped being detected at all
+// - a regression against v1.0.0. Detection now reads the newest block AND the
+// footer beneath it, which is where those forms render.
+test('a footer-form transient is detected even under ordinary output', () => {
+  const screen = [
+    '⏺ Read(src/app.js)', '  ⎿ Read 120 lines', '', '✻ Cogitated for 4s', '',
+    ...Array(18).fill('  transcript line'),
+    'API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited',
+    '❯',
+  ].join('\n');
+  assert.equal(classifyLimit(screen, 15), 'transient');
+});
+
+test('the footer read does not revive a stale error above a fresh response', () => {
+  const recovered = [
+    '⏺ API Error: Connection closed mid-response. The response above may be incomplete.', '',
+    '⏺ Continuing with the refactor now.', '  ⎿ Edited 3 files', '❯',
+  ].join('\n');
+  assert.equal(classifyLimit(recovered, 15), null);
+});
+
+// The prompt box holds text the USER is typing. Pulling it into detection means
+// a half-written question mentioning an error engages the monitor, and because
+// send-text appends to the input line, Enter would submit that draft.
+test('a half-written user prompt is never treated as an error', () => {
+  const drafting = [
+    '⏺ Read(src/app.js)', '  ⎿ Read 120 lines', '', '✻ Cogitated for 4s', '',
+    '─'.repeat(50),
+    '❯ the upstream api was overloaded earlier, can you add a retry?',
+    '─'.repeat(50),
+    'Opus 5 (1M context)  |  ctx 22%',
+  ].join('\n');
+  assert.equal(classifyLimit(drafting, 15), null);
+  assert.equal(findRateLimitMessage(drafting, 15), null);
 });

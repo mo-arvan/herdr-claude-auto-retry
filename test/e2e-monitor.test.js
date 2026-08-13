@@ -61,7 +61,7 @@ function setup() {
   return { procEnv, setState, sends, locks };
 }
 
-test('monitor: detect -> engage label -> recover (esc/text/enter) -> clear on resume -> lock cleaned', async () => {
+test('monitor: detect -> engage label -> recover (text/enter, no esc) -> clear on resume -> lock cleaned', async () => {
   const t = setup();
   t.setState({
     panes: [{ pane_id: 'w1:p1', terminal_id: 't1', agent: 'claude', agent_status: 'idle', cwd: '/x/proj' }],
@@ -76,7 +76,7 @@ test('monitor: detect -> engage label -> recover (esc/text/enter) -> clear on re
       return label && enter ? s : null;
     });
     assert.ok(fired, 'engaged label + recovery should fire within timeout');
-    assert.ok(fired.some((c) => c[0] === 'send-keys' && c.includes('esc')), 'Escape sent before resuming (menu safety)');
+    assert.ok(!fired.some((c) => c[0] === 'send-keys' && c.includes('esc')), 'an idle pane is never sent Escape (D22)');
     assert.ok(fired.some((c) => c[0] === 'send-text'), 'retry text sent');
     // The session resumes: footer no longer limited and the pane goes working.
     t.setState({
@@ -179,5 +179,86 @@ test('one hook fire re-establishes coverage for all Claude panes (restart sweep)
     } catch {
       /* already gone */
     }
+  }
+});
+
+// The D19 handoff, end to end. The unit tests prove the state model; these two
+// prove the wiring, which is where it would silently die: the monitor has to
+// WRITE the state, and nothing else may delete it before its successor reads it.
+const readLock = (t, file) => JSON.parse(readFileSync(join(t.procEnv.HERDR_PLUGIN_STATE_DIR, 'monitors', file), 'utf8'));
+
+test('a running monitor persists its episode state into the lock record', async () => {
+  const t = setup();
+  t.setState({
+    panes: [{ pane_id: 'w1:p1', terminal_id: 't1', agent: 'claude', agent_status: 'working', cwd: '/x/proj' }],
+    read: '⏺ API Error: Connection closed mid-response. The response above may be incomplete.',
+  });
+  const proc = spawn(process.execPath, [MAIN, 'monitor', 't1', 'w1:p1'], { env: t.procEnv, stdio: 'ignore' });
+  try {
+    const rec = await waitFor(() => {
+      if (!t.locks().includes('t1.json')) return null;
+      const r = readLock(t, 't1.json');
+      return r.state && r.state.stuckSig ? r : null;
+    });
+    assert.ok(rec, 'the lock record must carry state, or a replacement has nothing to inherit');
+    assert.match(rec.state.stuckSig, /^[0-9a-f]{40}$/, 'the signature is hashed, not the raw output block');
+    assert.equal(typeof rec.state.nudges, 'number');
+  } finally {
+    proc.kill('SIGTERM');
+  }
+});
+
+test('status prunes records for vanished panes but keeps a stale one whose pane still exists', async () => {
+  const t = setup();
+  t.setState({
+    panes: [{ pane_id: 'w1:p1', terminal_id: 't-live', agent: 'claude', agent_status: 'idle', cwd: '/x/proj' }],
+    read: 'normal prompt',
+  });
+  const DEAD_PID = 2 ** 30;
+  const state = { nudges: 2, lastKind: 'transient', lastStuck: false, frozenMs: 1000, stuckSig: 'a'.repeat(40) };
+  const dir = join(t.procEnv.HERDR_PLUGIN_STATE_DIR, 'monitors');
+  mkdirSync(dir, { recursive: true });
+  for (const id of ['t-live', 't-gone']) {
+    writeFileSync(join(dir, `${id}.json`), JSON.stringify({
+      terminalId: id, paneId: 'w1:p1', agent: 'claude', pid: DEAD_PID, startedAtMs: 0, updatedAtMs: 0, state,
+    }));
+  }
+  await new Promise((resolve) => {
+    spawn(process.execPath, [MAIN, 'status'], { env: t.procEnv, stdio: 'ignore' }).on('exit', resolve);
+  });
+  assert.ok(t.locks().includes('t-live.json'), 'a stale record whose pane is still open holds the episode state');
+  assert.deepEqual(readLock(t, 't-live.json').state, state, 'and status must not touch it');
+  assert.ok(!t.locks().includes('t-gone.json'), 'a record whose pane is gone is still pruned');
+});
+
+// herdr.paneList() returns [] on ANY failure (crash, restart, timeout, bad JSON),
+// so a single blip used to look identical to "the pane closed" and shut the
+// monitor down - deleting the lock record and the episode state it carries. That
+// is worse than the stale-record prune D19 already forbids.
+test('a single failed pane list does not delete the monitor or its carried state', async () => {
+  const t = setup();
+  const live = {
+    panes: [{ pane_id: 'w1:p1', terminal_id: 't1', agent: 'claude', agent_status: 'working', cwd: '/x/proj' }],
+    read: '⏺ API Error: Connection closed mid-response. The response above may be incomplete.',
+  };
+  t.setState(live);
+  const proc = spawn(process.execPath, [MAIN, 'monitor', 't1', 'w1:p1'], { env: t.procEnv, stdio: 'ignore' });
+  try {
+    const before = await waitFor(() => {
+      if (!t.locks().includes('t1.json')) return null;
+      const r = readLock(t, 't1.json');
+      return r.state && r.state.stuckSig ? r : null;
+    });
+    assert.ok(before, 'monitor claimed its lock and banked episode state');
+
+    t.setState({ panes: [], read: '' }); // herdr blips: empty list, no error
+    await sleep(2500);
+    t.setState(live);
+    await sleep(1500);
+
+    assert.ok(t.locks().includes('t1.json'), 'the record must survive a transient empty pane list');
+    assert.equal(readLock(t, 't1.json').state.stuckSig, before.state.stuckSig, 'and keep its carried state');
+  } finally {
+    proc.kill('SIGTERM');
   }
 });

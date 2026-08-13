@@ -1,0 +1,39 @@
+#!/bin/sh
+# Leak scan before anything leaves the machine. This repo is public and its test
+# fixtures are screenshots of real sessions, so the check runs on every push, not
+# just releases.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Bypass in an emergency: git push --no-verify
+
+set -e
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+if [ ! -f .private-markers ]; then
+  # Expected on a contributor clone. On the maintainer's machine it means the
+  # local denylist went missing and the scan just got weaker without saying so.
+  printf 'pre-push: no .private-markers; scanning with the generic patterns only\n' >&2
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  printf 'pre-push: node is not on PATH, so the leak scan did not run.\n' >&2
+  printf 'Run `npm run scan` in a shell that has node, or push with --no-verify.\n' >&2
+  exit 1
+fi
+
+# Read the refs being pushed on stdin and scan only what this push INTRODUCES:
+# every local tip, minus everything any remote already has. Keeping just the last
+# ref, or walking a new tag's whole history, re-scans published commits.
+tips=""
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+  tips="$tips $local_sha"
+done
+[ -n "$tips" ] && tips="$tips --not --remotes"
+
+if ! node scripts/scan-private.mjs ${tips:+--range "$tips"}; then
+  printf '\npre-push: refusing to push. Use --no-verify only if you are certain.\n' >&2
+  exit 1
+fi

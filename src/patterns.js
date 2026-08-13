@@ -45,23 +45,38 @@ const TRANSIENT_PATTERNS = [
 const WINDOW = 6;
 
 const OUTPUT_LINE = /^\s*[⏺⎿]/u;
+const AGENT_LINE = /^\s*⏺/u;
 const NON_OUTPUT_LINE = /^\s*[⏺⎿❯>]/u;
+const PROMPT_LINE = /^\s*[❯>]/u;
 const THINKING_LINE = /^\s*\S{0,2}\s*\w+\s+for\s+\d+m?\s?\d*s\b/i;
 
-export function latestOutputBlock(text) {
-  const lines = Array.isArray(text) ? text : stripAnsi(text).split('\n');
+function outputBlockBounds(lines) {
   let start = -1;
   for (let k = lines.length - 1; k >= 0; k--) {
     if (OUTPUT_LINE.test(lines[k])) { start = k; break; }
   }
   if (start < 0) return null;
-  const block = [lines[start]];
+  let end = start;
   for (let k = start + 1; k < lines.length; k++) {
     const ln = lines[k];
     if (ln.trim() === '' || NON_OUTPUT_LINE.test(ln) || THINKING_LINE.test(ln)) break;
-    block.push(ln);
+    end = k;
   }
-  return block.join('\n');
+  return { start, end };
+}
+
+export function agentErrorBlock(text) {
+  const block = latestOutputBlock(text);
+  if (block == null) return null;
+  const first = block.split('\n')[0];
+  if (!AGENT_LINE.test(first)) return null;
+  return TRANSIENT_PATTERNS.some((p) => p.test(first)) ? block : null;
+}
+
+export function latestOutputBlock(text) {
+  const lines = Array.isArray(text) ? text : stripAnsi(text).split('\n');
+  const bounds = outputBlockBounds(lines);
+  return bounds ? lines.slice(bounds.start, bounds.end + 1).join('\n') : null;
 }
 
 function compile(customPatterns) {
@@ -109,18 +124,21 @@ export function isRateLimited(text, customPatterns = [], tailLines = 0) {
 
 export function classifyLimit(text, tailLines = 0, customPatterns = [], customTransientPatterns = []) {
   if (isRateLimited(text, customPatterns, tailLines)) return 'reset';
-  let lines = stripAnsi(text).split('\n');
-  if (tailLines > 0) lines = lines.slice(-tailLines);
-  const block = latestOutputBlock(lines);
-  const blob = block != null ? block : lines.join('\n');
+  const all = stripAnsi(text).split('\n');
+  const bounds = outputBlockBounds(all);
+  const block = bounds ? all.slice(bounds.start, bounds.end + 1).join('\n') : null;
+  const below = bounds ? bounds.end + 1 : Math.max(0, all.length - (tailLines || all.length));
+  const footer = all.slice(below).filter((l) => !PROMPT_LINE.test(l));
+  const blob = [block, footer.join('\n')].filter((part) => part).join('\n');
   const transient = TRANSIENT_PATTERNS.concat(compile(customTransientPatterns));
   if (transient.some((p) => p.test(blob))) return 'transient';
   return null;
 }
 
 export function findRateLimitMessage(text, tailLines = 0) {
-  let lines = stripAnsi(text).split('\n');
-  if (tailLines > 0) lines = lines.slice(-tailLines);
+  const all = stripAnsi(text).split('\n');
+  let lines = tailLines > 0 ? all.slice(-tailLines) : all;
+  lines = lines.filter((l) => !PROMPT_LINE.test(l));
 
   let limitIdx = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -149,6 +167,13 @@ export function findRateLimitMessage(text, tailLines = 0) {
   if (limitIdx >= 0) return lines[limitIdx].trim();
   for (let i = lines.length - 1; i >= 0; i--) {
     if (TRANSIENT_PATTERNS.some((p) => p.test(lines[i]))) return lines[i].trim();
+  }
+
+  const block = latestOutputBlock(all);
+  if (block != null) {
+    for (const line of block.split('\n')) {
+      if (TRANSIENT_PATTERNS.some((p) => p.test(line))) return line.trim();
+    }
   }
 
   return null;

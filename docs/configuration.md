@@ -15,13 +15,15 @@ Running monitors re-read this file every poll, so edits take effect on their own
 | `handleTransient` | `true` | Also recover sessions left idle by a transient server error. |
 | `transientWaitSeconds` | `60` | First wait before the first transient nudge (the backoff base). |
 | `transientMaxWaitSeconds` | `300` | Cap on the transient exponential backoff (nudges continue until the error clears). |
+| `handleStuckWorking` | `true` | Take over a pane herdr reports as `working` but that is actually stalled. herdr's `working` is a title-spinner heuristic that can be stale after a connection drop; set this `false` to trust herdr's state absolutely. |
+| `stuckWorkingMinutes` | `5` | How long a `working` pane must show the same transient error as its latest output, with no new output, before it is treated as stalled. A genuinely working pane produces new output well within this window, so it never qualifies. |
 | `retryMessage` | `"Continue where you left off."` | Text typed to resume Claude. Keep it free of detector words (`limit`, `rate`, `overloaded`, ...); it is echoed into the input line, so a trigger word makes the monitor match its own nudge. |
 | `customPatterns` | `[]` | Extra regexes treated as a usage/subscription limit (waited out). See below. |
 | `customTransientPatterns` | `[]` | Extra regexes treated as a transient server error (short backoff). See below. |
 | `readSource` | `"detection"` | herdr read source: `recent`, `recent-unwrapped`, `visible`, or `detection`. |
-| `readLines` | `25` | Lines read per check. |
-| `detectionTailLines` | `15` | Only the last N lines (the live footer) are scanned for a limit. |
-| `dismissMenu` | `true` | Send Escape before resuming (dismisses the `/rate-limit-options` menu). |
+| `readLines` | `40` | Lines read per check. |
+| `detectionTailLines` | `15` | Tail window for rate-limit detection. Transient server errors are not bound by it: they anchor to the latest on-screen output block, so a long task list cannot push the error out of view. |
+| `dismissMenu` | `true` | Send Escape before resuming, but only when the pane is blocked at a prompt (dismisses the `/rate-limit-options` menu). Never sent to an idle or working pane, where it would interrupt the turn. |
 | `menuDismissDelayMs` | `300` | Pause after Escape. |
 | `submitDelayMs` | `400` | Pause between typing the message and pressing Enter. |
 | `eligibleStates` | `["idle","blocked","done"]` | Pane states the plugin may act on. `working` is never allowed (it is stripped in validation). |

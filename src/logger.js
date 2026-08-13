@@ -10,8 +10,14 @@ function timeOnly() {
   return new Date().toTimeString().slice(0, 8);
 }
 
+export function logFileName(d = new Date()) {
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}.log`;
+}
+
 function todayFile(dir) {
-  return join(dir, `${new Date().toISOString().split('T')[0]}.log`);
+  return join(dir, logFileName());
 }
 
 function cleanup(dir) {

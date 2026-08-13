@@ -7,11 +7,11 @@ import { dirname, join } from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { createLogger, tailLog } from '../src/logger.js';
 import { createHerdr, isClaudeAgent } from '../src/herdr.js';
-import { createMonitorState, processOneTick } from '../src/monitor-core.js';
+import { createMonitorState, carriedState, processOneTick } from '../src/monitor-core.js';
 import { recover } from '../src/recovery.js';
 import { stateDir } from '../src/paths.js';
 import {
-  claimSlot, touchRecord, removeRecord, listRecords, isFresh, isAlive, hasActiveMonitor, lockHeldByOther,
+  claimSlot, touchRecord, removeRecord, readRecord, listRecords, isFresh, isAlive, hasActiveMonitor, lockHeldByOther,
 } from '../src/registry.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -147,7 +147,11 @@ async function status() {
   const byTerminal = new Map(panes.map((p) => [p.terminal_id, p]));
   const records = listRecords();
   const active = records.filter(isFresh);
-  for (const stale of records.filter((r) => !isFresh(r))) removeRecord(stale.terminalId);
+  if (panes.length > 0) {
+    for (const r of records) {
+      if (!isFresh(r) && !byTerminal.has(r.terminalId)) removeRecord(r.terminalId);
+    }
+  }
 
   if (active.length === 0) {
     process.stdout.write('No active auto-retry monitors.\n');
@@ -200,9 +204,13 @@ async function monitor() {
   let handle = initialPaneId ? String(initialPaneId).split(':').pop() : terminalId.replace(/^term_/, '').slice(-6);
   const logger = createLogger(undefined, { tag: () => handle });
 
+  const prior = readRecord(terminalId);
+  const state = createMonitorState(prior && prior.state);
+
   const claimed = claimSlot({
     terminalId, paneId: initialPaneId, agent: 'claude',
     pid: process.pid, startedAtMs: Date.now(), updatedAtMs: Date.now(),
+    state: carriedState(state),
   });
   if (!claimed) {
     logger.info('already monitored by another process; exiting');
@@ -210,7 +218,6 @@ async function monitor() {
   }
 
   const herdr = createHerdr();
-  const state = createMonitorState();
   let consecutiveErrors = 0;
   let stopped = false;
   let engaged = false;
@@ -234,6 +241,10 @@ async function monitor() {
   process.on('SIGINT', () => shutdown('SIGINT'));
 
   logger.info(`started (pid ${process.pid})`);
+  if (state.frozenMs || state.attempts) {
+    const frozen = state.frozenMs ? `, error unchanged for ${humanDur(state.frozenMs)} of watched time` : '';
+    logger.info(`carried state from a prior monitor (attempt ${state.attempts}${frozen})`);
+  }
 
   async function resolvePane() {
     if (currentPaneId) {
@@ -262,18 +273,20 @@ async function monitor() {
       return;
     }
     if (!pane) {
-      await shutdown('pane gone');
+      consecutiveErrors++;
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) await shutdown('pane gone');
       return;
     }
-    touchRecord(terminalId, { paneId: pane.pane_id, agent: pane.agent || 'claude' });
+    touchRecord(terminalId, { paneId: pane.pane_id, agent: pane.agent || 'claude', state: carriedState(state) });
     handle = paneHandle(pane);
 
     const adapter = {
       exists: () => true,
       eligible: () => config.eligibleStates.includes(pane.agent_status),
+      blocked: () => pane.agent_status === 'blocked',
       isClaude: async () => isClaudeAgent(pane),
       read: async () => herdr.paneRead(pane.pane_id, { source: config.readSource, lines: config.readLines }),
-      recover: async () => recover(herdr, pane.pane_id, config),
+      recover: async () => recover(herdr, pane.pane_id, config, { blocked: pane.agent_status === 'blocked' || state.lastKind === 'reset' }),
     };
 
     try {
@@ -288,19 +301,20 @@ async function monitor() {
       if (result === 'waiting' && state.lastRateLimitMessage) {
         const label = isTransient ? 'server error' : 'rate limit';
         const verb = isTransient ? 'retry in' : 'waiting';
-        logger.info(`${label}: "${state.lastRateLimitMessage}" -> ${verb} ${humanDur(state.waitUntil - Date.now())}`);
+        const stuck = state.lastStuck ? ' [stuck; herdr reported working]' : '';
+        logger.info(`${label}${stuck}: "${state.lastRateLimitMessage}" -> ${verb} ${humanDur(state.waitUntil - Date.now())}`);
         state.lastRateLimitMessage = null;
       }
       if (result === 'retried') {
         const next = humanDur(state.waitUntil - Date.now());
-        logger.info(isTransient ? `nudged (attempt ${state.attempts}); next retry in ${next}` : `resumed (attempt ${state.attempts})`);
+        logger.info(isTransient ? `nudged (attempt ${state.nudges}); next retry in ${next}` : `resumed (attempt ${state.attempts})`);
       }
       if (result === 'user-continued') logger.info(isTransient ? 'server error cleared; monitoring' : 'limit cleared; monitoring');
       if (result === 'max-retries' && lastResult !== 'max-retries') logger.warn(`max retries (${config.maxRetries}) reached; cooling down`);
       if (result === 'skipped-not-claude') logger.warn('pane no longer a Claude agent; skipping send');
       lastResult = result;
 
-      const nowEngaged = state.status === 'waiting' && config.eligibleStates.includes(pane.agent_status);
+      const nowEngaged = state.status === 'waiting' && (config.eligibleStates.includes(pane.agent_status) || state.lastStuck);
       if (nowEngaged) {
         await herdr.reportMetadata(pane.pane_id, { customStatus: config.engagedLabel, agent: pane.agent, ttlMs: ENGAGED_TTL_MS });
       } else if (engaged) {

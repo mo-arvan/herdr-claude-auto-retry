@@ -64,6 +64,11 @@ test('transient handling config validates', () => {
   assert.equal(loadConfig(withConfig({ transientMaxWaitSeconds: 600 })).transientMaxWaitSeconds, 600);
   // The backoff cap can never be below the base wait.
   assert.equal(loadConfig(withConfig({ transientWaitSeconds: 90, transientMaxWaitSeconds: 30 })).transientMaxWaitSeconds, 90);
+  assert.equal(def.handleStuckWorking, true);
+  assert.equal(def.stuckWorkingMinutes, 5);
+  assert.equal(loadConfig(withConfig({ handleStuckWorking: false })).handleStuckWorking, false);
+  assert.equal(loadConfig(withConfig({ stuckWorkingMinutes: 10 })).stuckWorkingMinutes, 10);
+  assert.equal(loadConfig(withConfig({ stuckWorkingMinutes: 0 })).stuckWorkingMinutes, 5); // min 1
 });
 
 test('detectionTailLines defaults to 15 and rejects junk', () => {

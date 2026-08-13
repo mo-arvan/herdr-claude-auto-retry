@@ -10,11 +10,13 @@ export const DEFAULT_CONFIG = {
   handleTransient: true,
   transientWaitSeconds: 60,
   transientMaxWaitSeconds: 300,
+  handleStuckWorking: true,
+  stuckWorkingMinutes: 5,
   retryMessage: 'Continue where you left off.',
   customPatterns: [],
   customTransientPatterns: [],
   readSource: 'detection',
-  readLines: 25,
+  readLines: 40,
   detectionTailLines: 15,
   dismissMenu: true,
   menuDismissDelayMs: 300,
@@ -53,6 +55,8 @@ function validate(cfg) {
     validNumber(cfg.transientMaxWaitSeconds, 1, DEFAULT_CONFIG.transientMaxWaitSeconds),
   );
   if (typeof cfg.handleTransient !== 'boolean') cfg.handleTransient = DEFAULT_CONFIG.handleTransient;
+  if (typeof cfg.handleStuckWorking !== 'boolean') cfg.handleStuckWorking = DEFAULT_CONFIG.handleStuckWorking;
+  cfg.stuckWorkingMinutes = validNumber(cfg.stuckWorkingMinutes, 1, DEFAULT_CONFIG.stuckWorkingMinutes);
   cfg.readLines = validNumber(cfg.readLines, 5, DEFAULT_CONFIG.readLines);
   cfg.detectionTailLines = validNumber(cfg.detectionTailLines, 1, DEFAULT_CONFIG.detectionTailLines);
   cfg.menuDismissDelayMs = validNumber(cfg.menuDismissDelayMs, 0, DEFAULT_CONFIG.menuDismissDelayMs);

@@ -4,3 +4,8 @@ node_modules/
 
 # Internal working docs - kept local, not part of the public release.
 PROGRESS.md
+
+# Denylist for the leak scan (scripts/scan-private.mjs), one regex per line.
+# Never committed: a list of private names, in a public repo, publishes them.
+# Keep it durable by symlinking it at a private repo, same as PROGRESS.md.
+.private-markers

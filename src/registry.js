@@ -38,7 +38,7 @@ export function readRecord(terminalId) {
 export function claimSlot(rec) {
   mkdirSync(monitorsDir(), { recursive: true });
   const path = lockPath(rec.terminalId);
-  const body = JSON.stringify({ ...rec, updatedAtMs: rec.updatedAtMs || Date.now() }, null, 2);
+  const body = JSON.stringify({ ...rec, updatedAtMs: rec.updatedAtMs ?? Date.now() }, null, 2);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       writeFileSync(path, body, { flag: 'wx' });
@@ -58,9 +58,9 @@ function writeRecord(rec) {
   writeFileSync(lockPath(rec.terminalId), JSON.stringify(rec, null, 2));
 }
 
-export function touchRecord(terminalId, patch = {}) {
+export function touchRecord(terminalId, patch = {}, ownerPid = process.pid) {
   const rec = readRecord(terminalId);
-  if (!rec) return;
+  if (!rec || rec.pid !== ownerPid) return;
   writeRecord({ ...rec, ...patch, updatedAtMs: Date.now() });
 }
 
@@ -95,8 +95,5 @@ export function lockHeldByOther(terminalId, myPid) {
 }
 
 export function hasActiveMonitor(terminalId) {
-  const rec = readRecord(terminalId);
-  if (isFresh(rec)) return true;
-  if (rec) removeRecord(terminalId);
-  return false;
+  return isFresh(readRecord(terminalId));
 }

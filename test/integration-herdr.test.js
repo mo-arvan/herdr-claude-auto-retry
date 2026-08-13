@@ -63,7 +63,7 @@ test('recovery emits esc, send-text, enter as separate CLI calls (#7/#19)', asyn
   const { createHerdr } = await import(`../src/herdr.js?rec=${Date.now()}`);
   const { recover } = await import(`../src/recovery.js?rec=${Date.now()}`);
   const h = createHerdr();
-  await recover(h, '1-1', { dismissMenu: true, menuDismissDelayMs: 0, submitDelayMs: 0, retryMessage: 'continue please' });
+  await recover(h, '1-1', { dismissMenu: true, menuDismissDelayMs: 0, submitDelayMs: 0, retryMessage: 'continue please' }, { blocked: true });
 
   assert.deepEqual(reads(sendsPath), [
     ['send-keys', '1-1', 'esc'],

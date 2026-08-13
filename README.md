@@ -1,6 +1,6 @@
 # herdr-claude-auto-retry
 
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node: >=18](https://img.shields.io/badge/node-%3E%3D18-339933.svg)](package.json) [![tests: 86 passing](https://img.shields.io/badge/tests-86%20passing-brightgreen.svg)](test/) [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node: >=18](https://img.shields.io/badge/node-%3E%3D18-339933.svg)](package.json) [![tests: 133 passing](https://img.shields.io/badge/tests-133%20passing-brightgreen.svg)](test/) [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
 
 > Wait out Anthropic rate limits and auto-resume Claude Code, the herdr-native way: no tmux, no shell wrapper.
 
@@ -8,7 +8,7 @@ Claude Code stops when it hits an Anthropic rate limit or a transient server err
 
 ## Install
 
-Requires herdr `>= 0.7.0` and Node `>= 18`.
+Requires herdr `>= 0.7.5` and Node `>= 18`.
 
 ```bash
 herdr plugin install mo-arvan/herdr-claude-auto-retry    # or: herdr plugin link /path/to/checkout
@@ -17,9 +17,11 @@ herdr plugin action invoke claude-auto-retry.watch-all   # attach to already-ope
 
 New Claude panes are picked up automatically. Every command runs through `launch.sh`, which finds node on `PATH` or in the usual version-manager dirs (fnm/nvm/mise/asdf/volta). Set `HERDR_NODE` to node's path if it cannot.
 
+A plain install tracks the default branch, so reinstalling picks up whatever has landed since. To stay on one version instead, pin the tag: `herdr plugin install mo-arvan/herdr-claude-auto-retry --ref v1.1.0`.
+
 ## How it works
 
-A herdr event hook starts a small detached monitor for each Claude pane. The monitor acts only when herdr reports the pane stopped, never while it is working, so it cannot fire on a pane that merely displays rate-limit-like text. It reads the live footer to separate a real rate limit or server error from ordinary output. For a rate limit, it waits out the reset time. For a server error, it retries with exponential backoff, up to five minutes. It resumes by sending Escape, the message, and Enter as separate keystrokes, which sidesteps Claude's paste detection and the `/rate-limit-options` menu. It reads recovery off the screen, so it never re-pokes a session that already came back. Coverage self-heals after a herdr restart. A pane that is waiting shows a single `retry engaged` label.
+A herdr event hook starts a small detached monitor for each Claude pane. It separates a real rate limit or server error from ordinary output by reading the newest block of Claude's output plus the status lines below it, so an error stays "live" only until Claude says something else. For a rate limit it waits out the reset time; for a server error it retries with exponential backoff, up to five minutes. It resumes by typing the message and pressing Enter as separate keystrokes, which sidesteps Claude's paste detection. Escape is sent only when the pane is waiting at a prompt, because on a running turn it would interrupt the work. A pane that is genuinely busy is left alone, and a pane waiting on you for a permission decision is never answered on your behalf. It reads recovery off the screen, so it never re-pokes a session that already came back. Coverage self-heals after a herdr restart. A pane that is waiting shows a single `retry engaged` label.
 
 ## Commands
 
