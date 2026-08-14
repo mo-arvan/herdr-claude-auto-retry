@@ -23,6 +23,7 @@ Running monitors re-read this file every poll, so edits take effect on their own
 | `detectionTailLines` | `15` | Only the last N lines (the live footer) are scanned for a limit. |
 | `dismissMenu` | `true` | Send Escape before resuming (dismisses the `/rate-limit-options` menu). |
 | `menuDismissDelayMs` | `300` | Pause after Escape. |
+| `verifyInput` | `true` | Before pressing Enter, read back the `❯` input line and retype the message if its first character was eaten (Claude Code's vim editor mode runs it as a command). |
 | `submitDelayMs` | `400` | Pause between typing the message and pressing Enter. |
 | `eligibleStates` | `["idle","blocked","done"]` | Pane states the plugin may act on. `working` is never allowed (it is stripped in validation). |
 | `engagedLabel` | `"retry engaged"` | Sidebar label shown on a pane while it waits out a limit. |

@@ -2,6 +2,12 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Recovery no longer loses the first character of `retryMessage` when Claude Code runs in vim editor mode. The Escape that dismisses the `/rate-limit-options` menu also switches the input line to NORMAL, where the first character is executed as a vim command rather than typed, so Claude received `ontinue where you left off.`. The message is now read back off the `❯` input line and retyped once when its first character is missing (`verifyInput`, default `true`).
+
 ## [1.0.0] - 2026-07-02
 
 Initial release.

@@ -1,6 +1,6 @@
 # herdr-claude-auto-retry
 
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node: >=18](https://img.shields.io/badge/node-%3E%3D18-339933.svg)](package.json) [![tests: 86 passing](https://img.shields.io/badge/tests-86%20passing-brightgreen.svg)](test/) [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node: >=18](https://img.shields.io/badge/node-%3E%3D18-339933.svg)](package.json) [![tests: 97 passing](https://img.shields.io/badge/tests-97%20passing-brightgreen.svg)](test/) [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
 
 > Wait out Anthropic rate limits and auto-resume Claude Code, the herdr-native way: no tmux, no shell wrapper.
 
@@ -19,7 +19,7 @@ New Claude panes are picked up automatically. Every command runs through `launch
 
 ## How it works
 
-A herdr event hook starts a small detached monitor for each Claude pane. The monitor acts only when herdr reports the pane stopped, never while it is working, so it cannot fire on a pane that merely displays rate-limit-like text. It reads the live footer to separate a real rate limit or server error from ordinary output. For a rate limit, it waits out the reset time. For a server error, it retries with exponential backoff, up to five minutes. It resumes by sending Escape, the message, and Enter as separate keystrokes, which sidesteps Claude's paste detection and the `/rate-limit-options` menu. It reads recovery off the screen, so it never re-pokes a session that already came back. Coverage self-heals after a herdr restart. A pane that is waiting shows a single `retry engaged` label.
+A herdr event hook starts a small detached monitor for each Claude pane. The monitor acts only when herdr reports the pane stopped, never while it is working, so it cannot fire on a pane that merely displays rate-limit-like text. It reads the live footer to separate a real rate limit or server error from ordinary output. For a rate limit, it waits out the reset time. For a server error, it retries with exponential backoff, up to five minutes. It resumes by sending Escape, the message, and Enter as separate keystrokes, which sidesteps Claude's paste detection and the `/rate-limit-options` menu, and it reads the message back off the input line before submitting, so vim editor mode cannot swallow its first character. It reads recovery off the screen, so it never re-pokes a session that already came back. Coverage self-heals after a herdr restart. A pane that is waiting shows a single `retry engaged` label.
 
 ## Commands
 

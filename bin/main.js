@@ -273,7 +273,7 @@ async function monitor() {
       eligible: () => config.eligibleStates.includes(pane.agent_status),
       isClaude: async () => isClaudeAgent(pane),
       read: async () => herdr.paneRead(pane.pane_id, { source: config.readSource, lines: config.readLines }),
-      recover: async () => recover(herdr, pane.pane_id, config),
+      recover: async () => recover(herdr, pane.pane_id, config, (msg) => logger.info(msg)),
     };
 
     try {

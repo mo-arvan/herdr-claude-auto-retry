@@ -1,15 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { recover } from '../src/recovery.js';
+import { recover, readInputLine, classifyTypedInput } from '../src/recovery.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
 
-function mockHerdr() {
+function mockHerdr(screens = null) {
   const calls = [];
-  return {
+  const queue = Array.isArray(screens) ? [...screens] : null;
+  const h = {
     calls,
+    reads: 0,
     sendText: async (pane, text) => calls.push(['send-text', pane, text]),
     sendKeys: async (pane, ...keys) => calls.push(['send-keys', pane, ...keys]),
   };
+  if (queue) {
+    h.paneRead = async () => {
+      h.reads++;
+      return queue.length > 1 ? queue.shift() : queue[0];
+    };
+  }
+  return h;
+}
+
+const MSG = 'Continue where you left off.';
+
+function screenWith(inputText) {
+  return [
+    '⏺ Working on it.',
+    '─────────────────────────────',
+    `❯ ${inputText}`,
+    '─────────────────────────────',
+    '  repo | Opus 5',
+    '  -- INSERT -- ⏵⏵ bypass permissions on',
+  ].join('\n');
 }
 
 // Issue #19: dismiss the menu first so Enter never confirms "Upgrade your plan".
@@ -39,4 +61,98 @@ test('dismissMenu=false skips the Escape', async () => {
   await recover(h, '1-2', config);
   assert.equal(h.calls[0][0], 'send-text');
   assert.ok(!h.calls.some((c) => c.includes('esc')));
+});
+
+// D20: Claude Code's vim editor mode turns the menu-dismissing Escape into a mode
+// switch, so the first character of the message runs as a vim command instead of being
+// typed ("C" = change to end of line) and Claude receives "ontinue where you left off.".
+test('readInputLine reads the echoed message out of the prompt line', () => {
+  assert.equal(readInputLine(screenWith(MSG)), MSG);
+  assert.equal(readInputLine(screenWith('ontinue where you left off.')), 'ontinue where you left off.');
+  assert.equal(readInputLine(screenWith('')), '');
+});
+
+test('readInputLine strips ANSI and joins a wrapped message, stopping at the box border', () => {
+  const screen = ['\x1b[2m─────\x1b[0m', '\x1b[1m❯\x1b[0m Continue where you', '  left off.', '─────', '  repo | Opus 5'].join('\n');
+  assert.equal(readInputLine(screen), MSG);
+});
+
+test('readInputLine returns null when the screen has no prompt line', () => {
+  assert.equal(readInputLine('⏺ no input box here\n─────'), null);
+  assert.equal(readInputLine(''), null);
+  assert.equal(readInputLine(null), null);
+});
+
+test('classifyTypedInput separates an intact echo from a first-character-eaten one', () => {
+  assert.equal(classifyTypedInput(screenWith(MSG), MSG), 'intact');
+  assert.equal(classifyTypedInput(screenWith('ontinue where you left off.'), MSG), 'eaten');
+  assert.equal(classifyTypedInput(screenWith('some other text'), MSG), 'unknown');
+  assert.equal(classifyTypedInput(null, MSG), 'unknown');
+});
+
+// An earlier nudge sitting in the transcript must not read as this one arriving intact:
+// only the live prompt line counts.
+test('classifyTypedInput ignores an intact copy of the message above the prompt line', () => {
+  const screen = ['⏺ Continue where you left off.', '─────', '❯ ontinue where you left off.', '─────'].join('\n');
+  assert.equal(classifyTypedInput(screen, MSG), 'eaten');
+});
+
+test('recovery clears and retypes when the prompt line lost the first character', async () => {
+  const h = mockHerdr([screenWith('ontinue where you left off.'), screenWith(MSG)]);
+  const logs = [];
+  const config = { ...DEFAULT_CONFIG, menuDismissDelayMs: 0, submitDelayMs: 0, retryMessage: MSG };
+  await recover(h, '1-2', config, (m) => logs.push(m));
+  assert.deepEqual(h.calls, [
+    ['send-keys', '1-2', 'esc'],
+    ['send-text', '1-2', MSG],
+    ['send-keys', '1-2', 'ctrl+u'],
+    ['send-text', '1-2', MSG],
+    ['send-keys', '1-2', 'enter'],
+  ]);
+  assert.match(logs[0], /repaired/);
+});
+
+test('recovery types once when the prompt line already holds the whole message', async () => {
+  const h = mockHerdr([screenWith(MSG)]);
+  const config = { ...DEFAULT_CONFIG, menuDismissDelayMs: 0, submitDelayMs: 0, retryMessage: MSG };
+  await recover(h, '1-2', config);
+  assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
+  assert.ok(!h.calls.some((c) => c.includes('ctrl+u')));
+  assert.equal(h.reads, 1);
+});
+
+// A failed or unreadable read is not evidence of anything: never retype on a guess.
+test('recovery does not retype when the screen cannot be read', async () => {
+  for (const screen of [null, '', 'no prompt line at all']) {
+    const h = mockHerdr([screen]);
+    const config = { ...DEFAULT_CONFIG, menuDismissDelayMs: 0, submitDelayMs: 0, retryMessage: MSG };
+    await recover(h, '1-2', config);
+    assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
+    assert.ok(!h.calls.some((c) => c.includes('ctrl+u')));
+  }
+});
+
+test('recovery still submits when the repair did not take', async () => {
+  const h = mockHerdr([screenWith('ontinue where you left off.')]);
+  const logs = [];
+  const config = { ...DEFAULT_CONFIG, menuDismissDelayMs: 0, submitDelayMs: 0, retryMessage: MSG };
+  await recover(h, '1-2', config, (m) => logs.push(m));
+  assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 2);
+  assert.deepEqual(h.calls.at(-1), ['send-keys', '1-2', 'enter']);
+  assert.match(logs[0], /still not verified/);
+});
+
+test('verifyInput=false never reads the pane', async () => {
+  const h = mockHerdr([screenWith('ontinue where you left off.')]);
+  const config = { ...DEFAULT_CONFIG, verifyInput: false, menuDismissDelayMs: 0, submitDelayMs: 0, retryMessage: MSG };
+  await recover(h, '1-2', config);
+  assert.equal(h.reads, 0);
+  assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
+});
+
+test('an adapter without paneRead falls back to typing once', async () => {
+  const h = mockHerdr();
+  const config = { ...DEFAULT_CONFIG, menuDismissDelayMs: 0, submitDelayMs: 0, retryMessage: MSG };
+  await recover(h, '1-2', config);
+  assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
 });
