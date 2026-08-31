@@ -63,8 +63,10 @@ function validate(cfg) {
   cfg.menuDismissDelayMs = validNumber(cfg.menuDismissDelayMs, 0, DEFAULT_CONFIG.menuDismissDelayMs);
   cfg.submitDelayMs = validNumber(cfg.submitDelayMs, 0, DEFAULT_CONFIG.submitDelayMs);
 
-  if (typeof cfg.retryMessage !== 'string' || !cfg.retryMessage) {
+  if (typeof cfg.retryMessage !== 'string' || !cfg.retryMessage.trim()) {
     cfg.retryMessage = DEFAULT_CONFIG.retryMessage;
+  } else {
+    cfg.retryMessage = cfg.retryMessage.trim();
   }
   if (typeof cfg.engagedLabel !== 'string' || !cfg.engagedLabel.trim()) {
     cfg.engagedLabel = DEFAULT_CONFIG.engagedLabel;

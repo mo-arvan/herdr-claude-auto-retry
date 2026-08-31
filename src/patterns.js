@@ -45,8 +45,10 @@ const TRANSIENT_PATTERNS = [
 const WINDOW = 6;
 
 const TABLE_ROW_SEPARATORS = /[│┃|]/g;
+const TABLE_ROW_START = /^\s*[│┃|]/;
 
 function isTableRow(line) {
+  if (!TABLE_ROW_START.test(line)) return false;
   return (line.match(TABLE_ROW_SEPARATORS) || []).length >= 3;
 }
 

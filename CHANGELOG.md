@@ -12,9 +12,9 @@ Notable changes, newest first. This project follows [Semantic Versioning](https:
   `[ui.sidebar.agents]`, which the docs now cover.
 - A rate limit that lands while the pane is still busy is no longer missed. Claude Code keeps its
   spinner up after a limit error while it drains queued work, and detection used to wait for the pane
-  to go idle - observed hiding a session limit for 6.5 minutes. A `reset` limit that is the latest
-  thing Claude printed now arms the wait immediately; the resume itself still follows the same rules
-  as before.
+  to go idle - observed hiding a session limit for 6.5 minutes. A `reset` limit that stays the latest
+  thing Claude printed across two consecutive checks now arms the wait early; the resume itself
+  still waits for the pane to actually stop.
 - A rendered table row about rate limits is no longer mistaken for one. A pane writing an incident
   report armed a 7-hour wait on its own markdown table; a line with three or more column separators
   is now never a limit candidate, while the boxed `/rate-limit-options` menu (two borders per line)

@@ -1,6 +1,6 @@
 
 import { createHash } from 'node:crypto';
-import { stripAnsi, classifyLimit, findRateLimitMessage, agentErrorBlock, limitInLatestBlock } from './patterns.js';
+import { stripAnsi, classifyLimit, findRateLimitMessage, agentErrorBlock, limitInLatestBlock, latestOutputBlock } from './patterns.js';
 import { parseResetTime, calculateWaitMs } from './time-parser.js';
 
 export function createMonitorState(carried) {
@@ -8,6 +8,7 @@ export function createMonitorState(carried) {
     status: 'monitoring', waitUntil: 0, attempts: 0,
     lastRateLimitMessage: null, lastKind: null, lastStuck: false,
     nudges: 0, frozenMs: 0, stuckSig: null, lastTickAt: 0,
+    armSig: null, armedWorking: false,
   };
   if (!carried || typeof carried !== 'object') return state;
   if (Number.isFinite(carried.nudges) && carried.nudges >= 0) state.nudges = Math.floor(carried.nudges);
@@ -83,7 +84,12 @@ export async function processOneTick(state, adapter, config, now = Date.now()) {
   const inStuckEpisode = !stoppedEligible && state.status === 'waiting' && state.lastStuck;
   const screenKind = readable ? classifyLimit(stripped, tail, config.customPatterns, config.customTransientPatterns) : null;
   const actionable = screenKind === 'reset' || (screenKind === 'transient' && config.handleTransient !== false && !blocked);
-  const armReset = !stoppedEligible && screenKind === 'reset' && limitInLatestBlock(stripped, tail, config.customPatterns);
+  const armCandidate = state.status !== 'waiting' && !stoppedEligible && screenKind === 'reset'
+    && limitInLatestBlock(stripped, tail, config.customPatterns);
+  const armSig = armCandidate ? createHash('sha1').update(latestOutputBlock(stripped) || '').digest('hex') : null;
+  const armReset = armCandidate && state.armSig != null && state.armSig === armSig;
+  state.armSig = armSig;
+  if (stoppedEligible) state.armedWorking = false;
   const eligible = stoppedEligible || viaStuck || armReset || (state.status === 'waiting' && state.lastKind === 'reset' && screenKind === 'reset');
   const kind = eligible || inStuckEpisode ? screenKind : null;
   const limited = eligible && actionable;
@@ -98,6 +104,7 @@ export async function processOneTick(state, adapter, config, now = Date.now()) {
       state.attempts = 0;
       state.nudges = 0;
       state.lastStuck = false;
+      state.armedWorking = false;
       clearStuck(state);
       return 'user-continued';
     }
@@ -108,6 +115,11 @@ export async function processOneTick(state, adapter, config, now = Date.now()) {
     }
 
     if (!limited) return 'waiting';
+
+    if (screenKind === 'reset' && state.armedWorking && !stoppedEligible) {
+      state.waitUntil = now + config.pollIntervalSeconds * 1000 * 6;
+      return 'waiting';
+    }
 
     if (viaStuck) state.lastStuck = true;
     if (screenKind === 'transient') {
@@ -134,6 +146,7 @@ export async function processOneTick(state, adapter, config, now = Date.now()) {
     state.lastRateLimitMessage = message;
     state.lastKind = kind;
     state.lastStuck = viaStuck;
+    state.armedWorking = armReset;
     if (kind === 'transient') {
       state.waitUntil = now + (config.transientWaitSeconds || 60) * 1000;
     } else {

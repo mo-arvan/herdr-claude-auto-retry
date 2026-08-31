@@ -90,7 +90,7 @@ Claude Code's on-screen text is not a stable API, so a phrasing the plugin looks
 
 ## The message was typed but Claude did not continue
 
-- Recovery sends Escape, then the message, then Enter as separate keystrokes. If Claude is in some other interactive state (a different menu, a permission prompt), the message may not be read as a continuation.
+- Recovery sends Escape (blocked/reset only), then the message, then Enter as separate keystrokes, with one retype in between if `verifyInput` detects the first character was eaten (see the section above). If Claude is in some other interactive state (a different menu, a permission prompt), the message may not be read as a continuation.
 - Adjust `retryMessage`, or turn `dismissMenu` off if the Escape is interfering.
 
 ## `logs` or `status` print JSON

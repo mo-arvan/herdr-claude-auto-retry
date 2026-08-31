@@ -3,7 +3,7 @@ import { stripAnsi } from './patterns.js';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const PROMPT_LINE = /^\s*[❯>]\s?/u;
+const PROMPT_LINE = /^\s*❯\s?/u;
 const BOX_CHARS = /[─━│┃╭╮╰╯┌┐└┘┄┈]/gu;
 const VERIFY_READ_LINES = 12;
 
@@ -37,26 +37,27 @@ export function classifyTypedInput(screen, message) {
   if (line === null) return 'unknown';
   const typed = collapse(message);
   if (typed && line.includes(typed)) return 'intact';
-  const withoutFirst = collapse(message.slice(1));
-  if (withoutFirst && line.includes(withoutFirst)) return 'eaten';
+  const withoutFirst = collapse(String(message).slice(1));
+  if (withoutFirst && line === withoutFirst) return 'eaten';
   return 'unknown';
 }
 
 async function inspectInput(herdr, paneId, config) {
   if (typeof herdr.paneRead !== 'function') return 'unknown';
-  const screen = await herdr.paneRead(paneId, { source: 'visible', lines: VERIFY_READ_LINES });
+  const screen = await herdr.paneRead(paneId, { source: 'visible', lines: VERIFY_READ_LINES, timeoutMs: 1500 });
   return classifyTypedInput(screen, config.retryMessage);
 }
 
 export async function recover(herdr, paneId, config, { blocked = false, log = null } = {}) {
-  if (config.dismissMenu && blocked) {
+  const escaped = !!(config.dismissMenu && blocked);
+  if (escaped) {
     await herdr.sendKeys(paneId, 'esc');
     await delay(config.menuDismissDelayMs);
   }
   await herdr.sendText(paneId, config.retryMessage);
   await delay(config.submitDelayMs);
 
-  if (config.verifyInput) {
+  if (escaped && config.verifyInput) {
     if ((await inspectInput(herdr, paneId, config)) === 'eaten') {
       await herdr.sendKeys(paneId, 'ctrl+u');
       await delay(config.menuDismissDelayMs);

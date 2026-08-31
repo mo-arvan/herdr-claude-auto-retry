@@ -52,8 +52,8 @@ export function createHerdr() {
     return env.result?.pane || null;
   }
 
-  async function paneRead(paneId, { source = 'recent', lines = 25 } = {}) {
-    const res = await run(['pane', 'read', paneId, '--source', source, '--lines', String(lines)]);
+  async function paneRead(paneId, { source = 'recent', lines = 25, timeoutMs = 10_000 } = {}) {
+    const res = await run(['pane', 'read', paneId, '--source', source, '--lines', String(lines)], { timeoutMs });
     if (res.code !== 0) return null;
     return res.stdout;
   }

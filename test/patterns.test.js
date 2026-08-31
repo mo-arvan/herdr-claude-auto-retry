@@ -368,3 +368,20 @@ test('the table guard does not swallow a boxed limit menu (#19)', () => {
   ].join('\n');
   assert.equal(isRateLimited(boxed), true);
 });
+
+// The table guard must not swallow a pipe-separated STATUS line: a real limit
+// rendered in a busy status line is exactly the form D25 exists to keep
+// readable. Tables start with a separator; status lines do not.
+test('a pipe-heavy status line still detects and extracts a real limit', () => {
+  const screen = [
+    '❯',
+    "  proj | main | Opus 5 | 5h: 100% — you've hit your session limit, resets 8:50pm",
+  ].join('\n');
+  assert.equal(isRateLimited(screen), true);
+  assert.match(findRateLimitMessage(screen), /resets 8:50pm/);
+});
+
+test('the table guard needs a leading separator, not just three pipes', () => {
+  assert.equal(isRateLimited('a | b | c | session limit resets 8:50pm'), true);
+  assert.equal(isRateLimited('| a | session limit resets 8:50pm | c |'), false);
+});

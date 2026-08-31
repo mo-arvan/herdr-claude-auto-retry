@@ -221,6 +221,7 @@ async function monitor() {
   let consecutiveErrors = 0;
   let stopped = false;
   let engaged = false;
+  let labelWarned = false;
   let currentPaneId = initialPaneId;
   let inTick = null;
   let lastResult = null;
@@ -228,7 +229,7 @@ async function monitor() {
   const shutdown = async (reason) => {
     if (stopped) return;
     stopped = true;
-    if (inTick) await Promise.race([inTick.catch(() => {}), delay(2000)]);
+    if (inTick) await Promise.race([inTick.catch(() => {}), delay(6000)]);
     const stillOurs = !lockHeldByOther(terminalId, process.pid);
     if (stillOurs) {
       if (engaged && currentPaneId) await herdr.reportMetadata(currentPaneId, { clear: true });
@@ -315,10 +316,15 @@ async function monitor() {
       lastResult = result;
 
       const nowEngaged = state.status === 'waiting' && (config.eligibleStates.includes(pane.agent_status) || state.lastStuck);
+      let labelRes = null;
       if (nowEngaged) {
-        await herdr.reportMetadata(pane.pane_id, { customStatus: config.engagedLabel, agent: pane.agent, ttlMs: ENGAGED_TTL_MS });
+        labelRes = await herdr.reportMetadata(pane.pane_id, { customStatus: config.engagedLabel, agent: pane.agent, ttlMs: ENGAGED_TTL_MS });
       } else if (engaged) {
-        await herdr.reportMetadata(pane.pane_id, { clear: true });
+        labelRes = await herdr.reportMetadata(pane.pane_id, { clear: true });
+      }
+      if (labelRes && labelRes.code !== 0 && !labelWarned) {
+        labelWarned = true;
+        logger.warn(`label report failed (exit ${labelRes.code}); retries are unaffected`);
       }
       engaged = nowEngaged;
     } catch (err) {

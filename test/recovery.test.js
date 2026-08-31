@@ -176,3 +176,25 @@ test('an adapter without paneRead falls back to typing once', async () => {
   await recover(h, '1-2', VCFG, { blocked: true });
   assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
 });
+
+// Review hardening on the PR: `eaten` is an equality test on the live `❯` line
+// (a draft ending in the message tail must never be ctrl+u'd away), the verify
+// only runs when an Escape was actually sent (the only path that can mangle),
+// and a transcript `> text` echo is not an input line.
+test('a draft that happens to end with the message tail is unknown, never eaten', () => {
+  assert.equal(classifyTypedInput(screenWith('please investigate the 529 ontinue where you left off.'), MSG), 'unknown');
+});
+
+test('a transcript "> text" echo is not an input line', () => {
+  assert.equal(readInputLine('⏺ hi\n> ontinue where you left off.'), null);
+  assert.equal(classifyTypedInput('⏺ hi\n> ontinue where you left off.', MSG), 'unknown');
+});
+
+test('the non-Escape path never reads the pane and never repairs', async () => {
+  const h = mockHerdrWithReads([screenWith('ontinue where you left off.')]);
+  await recover(h, '1-2', VCFG, { blocked: false });
+  assert.equal(h.reads, 0);
+  assert.ok(!h.calls.some((c) => c.includes('esc')));
+  assert.ok(!h.calls.some((c) => c.includes('ctrl+u')));
+  assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
+});

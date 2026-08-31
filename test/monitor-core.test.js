@@ -647,12 +647,25 @@ function limitScreen(counter) {
   ].join('\n');
 }
 
-test('a working pane arms the wait when the limit is the newest output', async () => {
+test('a working pane arms the wait when the limit stays the newest output for two polls', async () => {
   const state = createMonitorState();
   const a = adapter({ text: limitScreen(2), eligible: false });
-  assert.equal(await processOneTick(state, a, CONFIG, 0), 'waiting');
+  assert.equal(await processOneTick(state, a, CONFIG, 0), 'monitoring', 'one sighting is a snapshot, not evidence');
+  a._text = limitScreen(3); // chrome ticked on, output block unchanged
+  assert.equal(await processOneTick(state, a, CONFIG, 5000), 'waiting');
   assert.equal(state.status, 'waiting');
   assert.equal(a.recovered, 0, 'arming never types into a working pane');
+});
+
+// A pane that is actually streaming produces a new output block between polls,
+// so the two-poll confirmation never passes on it.
+test('a streaming pane never confirms the arm', async () => {
+  const state = createMonitorState();
+  const a = adapter({ text: limitScreen(2), eligible: false });
+  assert.equal(await processOneTick(state, a, CONFIG, 0), 'monitoring');
+  a._text = `${limitScreen(3)}\n⏺ Draining the queue.`;
+  assert.equal(await processOneTick(state, a, CONFIG, 5000), 'monitoring');
+  assert.equal(state.status, 'monitoring');
 });
 
 // The narrow gate that keeps the above from re-opening the false-resume hole the
@@ -685,10 +698,34 @@ test('a working pane never arms on a transient server error in one tick', async 
 test('armed while working, resumes once the deadline passes and the pane is idle', async () => {
   const state = createMonitorState();
   const a = adapter({ text: limitScreen(2), eligible: false });
-  assert.equal(await processOneTick(state, a, CONFIG, 0), 'waiting');
+  assert.equal(await processOneTick(state, a, CONFIG, 0), 'monitoring');
+  a._text = limitScreen(3);
+  assert.equal(await processOneTick(state, a, CONFIG, 5000), 'waiting');
 
   a._eligible = true; // spinner gone, pane parked on the limit
   a._text = limitScreen(7); // only the chrome moved on
+  assert.equal(await processOneTick(state, a, CONFIG, state.waitUntil + 1), 'retried');
+  assert.equal(a.recovered, 1);
+});
+
+// The send is gated on the pane having actually stopped: a deadline that passes
+// while herdr still reports working requeues instead of typing (and Escape,
+// which the reset path sends, never lands in a live turn).
+test('armed while working, the deadline send waits for the pane to stop', async () => {
+  const state = createMonitorState();
+  const a = adapter({ text: limitScreen(2), eligible: false });
+  await processOneTick(state, a, CONFIG, 0);
+  a._text = limitScreen(3);
+  await processOneTick(state, a, CONFIG, 5000);
+  assert.equal(state.status, 'waiting');
+
+  a._text = limitScreen(9);
+  const deadline = state.waitUntil + 1;
+  assert.equal(await processOneTick(state, a, CONFIG, deadline), 'waiting', 'still working: no send');
+  assert.equal(a.recovered, 0);
+  assert.ok(state.waitUntil > deadline, 'requeued for a later check');
+
+  a._eligible = true;
   assert.equal(await processOneTick(state, a, CONFIG, state.waitUntil + 1), 'retried');
   assert.equal(a.recovered, 1);
 });
