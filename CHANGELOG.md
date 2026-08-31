@@ -2,7 +2,7 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-08-31
 
 - The engaged label never appeared. `herdr pane report-metadata` dropped `--custom-status` and
   `--clear-custom-status` in herdr 0.7.4, so every label call failed with `unknown option`. Because
@@ -54,3 +54,4 @@ herdr-claude-auto-retry is a herdr-native replacement for the unmaintained, tmux
 
 [1.0.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.0.0
 [1.1.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.1.0
+[1.2.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.2.0
