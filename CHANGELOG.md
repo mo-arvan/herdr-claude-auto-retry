@@ -2,7 +2,7 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
 
 - The engaged label never appeared. `herdr pane report-metadata` dropped `--custom-status` and
   `--clear-custom-status` in herdr 0.7.4, so every label call failed with `unknown option`. Because
