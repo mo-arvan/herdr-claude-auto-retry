@@ -1,6 +1,6 @@
 
 import { createHash } from 'node:crypto';
-import { stripAnsi, classifyLimit, findRateLimitMessage, agentErrorBlock } from './patterns.js';
+import { stripAnsi, classifyLimit, findRateLimitMessage, agentErrorBlock, limitInLatestBlock } from './patterns.js';
 import { parseResetTime, calculateWaitMs } from './time-parser.js';
 
 export function createMonitorState(carried) {
@@ -83,7 +83,8 @@ export async function processOneTick(state, adapter, config, now = Date.now()) {
   const inStuckEpisode = !stoppedEligible && state.status === 'waiting' && state.lastStuck;
   const screenKind = readable ? classifyLimit(stripped, tail, config.customPatterns, config.customTransientPatterns) : null;
   const actionable = screenKind === 'reset' || (screenKind === 'transient' && config.handleTransient !== false && !blocked);
-  const eligible = stoppedEligible || viaStuck || (state.status === 'waiting' && state.lastKind === 'reset' && screenKind === 'reset');
+  const armReset = !stoppedEligible && screenKind === 'reset' && limitInLatestBlock(stripped, tail, config.customPatterns);
+  const eligible = stoppedEligible || viaStuck || armReset || (state.status === 'waiting' && state.lastKind === 'reset' && screenKind === 'reset');
   const kind = eligible || inStuckEpisode ? screenKind : null;
   const limited = eligible && actionable;
 

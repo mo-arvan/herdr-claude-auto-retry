@@ -26,7 +26,7 @@ Running monitors re-read this file every poll, so edits take effect on their own
 | `dismissMenu` | `true` | Send Escape before resuming, but only when the pane is blocked at a prompt (dismisses the `/rate-limit-options` menu). Never sent to an idle or working pane, where it would interrupt the turn. |
 | `menuDismissDelayMs` | `300` | Pause after Escape. |
 | `submitDelayMs` | `400` | Pause between typing the message and pressing Enter. |
-| `eligibleStates` | `["idle","blocked","done"]` | Pane states the plugin may act on. `working` is never allowed (it is stripped in validation). |
+| `eligibleStates` | `["idle","blocked","done"]` | Pane states the plugin may send to. `working` is never allowed (it is stripped in validation); a working pane can still arm a wait when a reset limit is its latest output. |
 | `engagedLabel` | `"retry engaged"` | Label reported on a pane while it waits out a limit. See below for showing it. |
 
 ## Showing the engaged label

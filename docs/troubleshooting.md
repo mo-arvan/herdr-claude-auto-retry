@@ -51,7 +51,7 @@ herdr plugin log list --plugin claude-auto-retry --limit 20
 Work through these in order; each has the command to check it.
 
 - Is a monitor running for that pane? The log shows a `started` line for each. If none is running, run `herdr plugin action invoke claude-auto-retry.watch-all`.
-- Is the pane stopped? The plugin acts only on `idle`, `blocked`, or `done`, never `working`. Read the state with `herdr pane get <pane-id>`. If Claude shows the limit while herdr still reports `working`, detection will not fire.
+- Is the pane stopped? The plugin sends only to `idle`, `blocked`, or `done` panes, never `working`. Read the state with `herdr pane get <pane-id>`. A `working` pane can still arm a wait, but only when the limit is the newest thing Claude printed; a limit sitting higher in a working pane's transcript will not fire.
 - Is the limit text in the footer? Detection scans only the last `detectionTailLines` lines (default 15). A limit that scrolled up is ignored. Inspect the footer with `herdr pane read <pane-id> --source detection --lines 25`.
 - Does the wording still match? If the footer clearly shows a limit but nothing fires, Claude's phrasing may have changed. Add the new phrasing via config; see "The wording changed" below.
 - Is it the plugin's own pane? A pane whose working directory is the plugin's own directory is never monitored, because it inherently shows limit-like text.
@@ -72,7 +72,7 @@ Claude Code's on-screen text is not a stable API, so a phrasing the plugin looks
 
 ## It resumed a pane that was not actually limited
 
-- This requires the pane to be stopped and limit-like text to be in the footer at the same time. The usual cause is limit-like text (a log, a doc, or a conversation about rate limits) sitting in the footer of an idle pane.
+- This requires the pane to be stopped and limit-like text to be in the footer at the same time. The usual cause is limit-like text (a log, a doc, or a conversation about rate limits) sitting in the footer of an idle pane. A rendered table row is ignored structurally, but bare prose quoting a limit banner with a reset time nearby still matches; a pane whose job is writing about rate limits is best kept under `HERDR_PLUGIN_ROOT`, which is never monitored.
 - Never add `working` to `eligibleStates`. It is rejected in config validation for exactly this reason.
 - If a custom pattern is too broad, tighten `customPatterns` or `customTransientPatterns`.
 

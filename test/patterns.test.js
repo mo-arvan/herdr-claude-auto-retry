@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stripAnsi, isRateLimited, findRateLimitMessage, classifyLimit, latestOutputBlock } from '../src/patterns.js';
+import { limitInLatestBlock, stripAnsi, isRateLimited, findRateLimitMessage, classifyLimit, latestOutputBlock } from '../src/patterns.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
 
 test('stripAnsi removes CSI, OSC, and hyperlink sequences', () => {
@@ -292,4 +292,79 @@ test('a half-written user prompt is never treated as an error', () => {
   ].join('\n');
   assert.equal(classifyLimit(drafting, 15), null);
   assert.equal(findRateLimitMessage(drafting, 15), null);
+});
+
+// ── PR #2 (astorozhevsky): a working pane's limit, and table rows ──────────
+// A real screen from a rate-limited pane: the error is the last thing Claude
+// printed, and everything below it is chrome that re-renders on its own.
+function limitScreen(counter) {
+  return [
+    '⏺ Bash(git push origin main)',
+    '  ⎿  main -> main',
+    '',
+    "⏺ You've hit your session limit · resets 8:50pm (Asia/Omsk)",
+    '',
+    `✻ Cooking… (${counter}m 14s · ↓ 8.1k tokens)`,
+    '─────────────────────────────────────────',
+    '❯',
+    '─────────────────────────────────────────',
+    `  proj git:(main) | Opus 5 (1M context) | ctx: ${counter}%`,
+    `  5h: 30% (resets in ${counter}m) | 7d: 29% (resets in 5d8h)`,
+    '  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)',
+  ].join('\n');
+}
+
+test('limitInLatestBlock: true when the limit is the newest output', () => {
+  assert.equal(limitInLatestBlock(limitScreen(2), 30), true);
+});
+
+test('limitInLatestBlock: false when the limit only sits in the scrollback', () => {
+  const resumed = [
+    "⏺ You've hit your session limit · resets 8:50pm (Asia/Omsk)",
+    '',
+    '⏺ Done - pushed the fix.',
+  ].join('\n');
+  // The whole-tail check still matches (the old line is there), which is exactly
+  // why the narrower block check is the one that gates an ineligible pane.
+  assert.equal(classifyLimit(resumed), 'reset');
+  assert.equal(limitInLatestBlock(resumed, 30), false);
+});
+
+test('limitInLatestBlock: false when nothing was printed as output at all', () => {
+  assert.equal(limitInLatestBlock('❯ please try again in 1 hour', 30), false);
+});
+
+// Observed live 2026-08-13 14:15:46: a pane where an incident involving this
+// plugin was being written up rendered a markdown table, and the row below armed
+// a 7h wait. Text ABOUT a limit is not a limit; Claude Code never renders its
+// banner as a table row.
+test('a rendered table row about a limit is not a rate limit', () => {
+  const row = '│             │ session limit · resets 8:50pm)                                    │            │';
+  assert.equal(isRateLimited(row), false);
+  assert.equal(classifyLimit(row), null);
+  assert.equal(limitInLatestBlock(`⏺ Итог разбора:\n${row}`, 30), false);
+});
+
+test('an ASCII markdown table about limits and server errors is inert', () => {
+  const doc = [
+    '⏺ Разбор инцидента:',
+    '| время    | событие                                             |',
+    '|----------|-----------------------------------------------------|',
+    "| 20:37:41 | You've hit your session limit · resets 8:50pm (Omsk) |",
+    '| 20:44:19 | ⏺ API Error: 529 Overloaded, try again in 2 minutes  |',
+  ].join('\n');
+  assert.equal(isRateLimited(doc), false);
+  assert.equal(classifyLimit(doc), null);
+});
+
+// The boxed /rate-limit-options menu (#19) has two borders per line, not three,
+// so the table guard must leave a genuine boxed limit alone.
+test('the table guard does not swallow a boxed limit menu (#19)', () => {
+  const boxed = [
+    '╭─────────────────────────────────────────────────╮',
+    "│ You've hit your session limit · resets 6:50pm   │",
+    '│ ❯ 1. Upgrade your plan                          │',
+    '╰─────────────────────────────────────────────────╯',
+  ].join('\n');
+  assert.equal(isRateLimited(boxed), true);
 });

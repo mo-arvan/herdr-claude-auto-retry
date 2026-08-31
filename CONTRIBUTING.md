@@ -10,7 +10,7 @@ Requires Node `>= 18` (built-in test runner, no `npm install` needed) and, for l
 git clone <your-fork>
 cd herdr-claude-auto-retry
 
-npm test                          # 133 tests, Node's built-in runner, zero deps
+npm test                          # 146 tests, Node's built-in runner, zero deps
 ```
 
 Try it against a running herdr:

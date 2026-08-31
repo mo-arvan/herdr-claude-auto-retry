@@ -1,6 +1,6 @@
 # herdr-claude-auto-retry
 
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node: >=18](https://img.shields.io/badge/node-%3E%3D18-339933.svg)](package.json) [![tests: 133 passing](https://img.shields.io/badge/tests-133%20passing-brightgreen.svg)](test/) [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node: >=18](https://img.shields.io/badge/node-%3E%3D18-339933.svg)](package.json) [![tests: 146 passing](https://img.shields.io/badge/tests-146%20passing-brightgreen.svg)](test/) [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
 
 > Wait out Anthropic rate limits and auto-resume Claude Code, the herdr-native way: no tmux, no shell wrapper.
 
