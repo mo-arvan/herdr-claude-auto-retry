@@ -14,8 +14,7 @@ const CONFIG = {
 
 const TRANSIENT_TEXT = 'API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited';
 
-// A relative reset keeps waitUntil deterministic (now + waitMs), independent of
-// wall-clock timezone.
+// Relative reset text keeps waitUntil timezone-independent.
 const LIMIT_TEXT = 'Please try again in 1 hour';
 const NORMAL_TEXT = '> ready for input';
 
@@ -54,9 +53,6 @@ test('enters waiting on a detected rate limit and sets the reset deadline', asyn
   assert.equal(state.waitUntil, 3_600_000); // 1h relative, margin 0
 });
 
-// The safety gate: an actively working pane (not eligible) is never treated as
-// rate-limited, even when its screen is full of rate-limit text. This is what
-// stops a false resume being typed into a busy agent.
 test('a working pane is never rate-limited even with limit text on screen', async () => {
   const state = createMonitorState();
   const a = adapter({ text: LIMIT_TEXT, eligible: false });
@@ -65,7 +61,6 @@ test('a working pane is never rate-limited even with limit text on screen', asyn
   assert.equal(a.recovered, 0);
 });
 
-// Real rate limits show as a stopped (idle) state, so an eligible pane fires.
 test('an eligible (stopped) pane with limit text enters waiting', async () => {
   const state = createMonitorState();
   const a = adapter({ text: LIMIT_TEXT, eligible: true });
@@ -73,8 +68,6 @@ test('an eligible (stopped) pane with limit text enters waiting', async () => {
   assert.equal(state.status, 'waiting');
 });
 
-// Transient server throttle (seen live): no reset time, so it must engage with
-// the SHORT transient wait, not the 5h fallback.
 test('a transient server throttle engages with the short transient wait', async () => {
   const cfg = { ...CONFIG, transientWaitSeconds: 30 };
   const state = createMonitorState();
@@ -91,17 +84,11 @@ test('transient handling can be disabled via config', async () => {
   assert.equal(a.recovered, 0);
 });
 
-// herdr's "working" is a title-spinner heuristic that can be stale after a
-// connection drop, so it is a hint, not a veto. A pane herdr calls working is
-// taken over ONLY if it shows the same transient error as its latest output,
-// frozen (no new output), past stuckWorkingMinutes.
 const STUCK_ERR = '⏺ API Error: Connection closed mid-response. The response above may be incomplete.';
 const MIN = 60_000;
 const T0 = 1_700_000_000_000;
 
-// The stuck clock measures OBSERVED frozen time, so tests must poll like the
-// monitor does rather than jumping the clock; a single huge tick is exactly the
-// sleep gap that must not count.
+// Steps in small ticks like the real monitor; a single big tick is a sleep gap and must not count.
 async function poll(state, a, cfg, from, to) {
   const step = cfg.pollIntervalSeconds * 1000;
   let result = 'monitoring';
@@ -109,10 +96,7 @@ async function poll(state, a, cfg, from, to) {
   return result;
 }
 
-// The screen shape from the live 7h stall (D18): a task list, prompt box and
-// status lines below the error push it ~18 lines up, outside detectionTailLines.
-// D17 and D18 shipped together and did NOT compose - stuckWorkingEligible kept a
-// private copy of the tail slicing, so the takeover was dead on this exact shape.
+// Real 7h-stall shape (D18): status lines push the error ~18 lines up, past detectionTailLines.
 const STALLED_SCREEN = [
   '⏺ Ran 1 shell command', '',
   STUCK_ERR, '',
@@ -178,9 +162,6 @@ test('handleStuckWorking=false restores absolute trust in herdr state', async ()
   assert.equal(a.recovered, 0);
 });
 
-// A monitor does not survive a night: the machine sleeps, every lock goes stale,
-// and the next sweep respawns the fleet. Episode state lives in the lock record
-// so the backoff and the stuck clock do not restart every ~15 minutes (D19).
 test('observed frozen time survives a monitor replacement', async () => {
   const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5 };
   const a = adapter({ text: STUCK_ERR, eligible: false });
@@ -198,8 +179,6 @@ test('observed frozen time survives a monitor replacement', async () => {
   assert.equal(b.recovered, 0, 'a monitor with no carried state cannot reach the threshold in 3 min');
 });
 
-// Wall-clock elapsed during sleep is NOT evidence of a stall: nothing can change
-// while the machine is off, so a successor must not inherit a 10h "frozen" claim.
 test('a sleep gap does not count as observed frozen time', async () => {
   const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5 };
   const a = adapter({ text: STUCK_ERR, eligible: false });
@@ -213,7 +192,6 @@ test('a sleep gap does not count as observed frozen time', async () => {
   assert.equal(await processOneTick(gen2, a, cfg, T0 + 10 * 3600_000 + 5000), 'monitoring', 'must not fire on tick one');
 });
 
-// AGENTS.md: never treat an unreadable screen as "cleared".
 test('an empty or failed read does not clear the stuck clock', async () => {
   const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5 };
   const state = createMonitorState();
@@ -230,10 +208,6 @@ test('an empty or failed read does not clear the stuck clock', async () => {
   assert.ok(a.recovered >= 1, 'progress was banked, so the threshold is still reached');
 });
 
-// A nudge does not end the episode: until the screen actually changes, the pane
-// is still stuck. The backoff spaces the retries, so the clock must keep running
-// rather than being re-armed - re-arming collapsed eligibility on the next tick
-// and made the monitor log a false "cleared" while the pane was still frozen.
 test('a frozen pane keeps escalating its backoff and never reports a false clear', async () => {
   const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5, transientWaitSeconds: 60, transientMaxWaitSeconds: 300 };
   const state = createMonitorState();
@@ -247,7 +221,6 @@ test('a frozen pane keeps escalating its backoff and never reports a false clear
   assert.ok(a.recovered >= 4, 'and it must keep trying while the outage lasts');
 });
 
-// Once the screen really does change, the episode ends and the counters reset.
 test('a pane that comes back resets the episode', async () => {
   const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5 };
   const state = createMonitorState();
@@ -291,9 +264,6 @@ test('carried state is sanitized, and a clock without its signature is dropped',
   assert.equal(createMonitorState({ status: 'waiting', waitUntil: T0 + 1e9 }).waitUntil, 0);
 });
 
-// A server outage can outlast any fixed count, so a transient error nudges
-// indefinitely - but the interval backs off exponentially (capped), so a
-// struggling server is never hammered.
 test('a transient error nudges repeatedly with exponential backoff (capped)', async () => {
   const cfg = { ...CONFIG, transientWaitSeconds: 10, transientMaxWaitSeconds: 40 };
   const state = createMonitorState();
@@ -317,10 +287,6 @@ test('a transient error nudges repeatedly with exponential backoff (capped)', as
   assert.equal(a.recovered, 3); // kept nudging, no spam cap
 });
 
-// The recovery guard that makes unlimited nudging safe: once Claude responds, the
-// OLD error lingering ABOVE the response is no longer the latest output block, so
-// classifyLimit reads "not limited" and nudging stops - it never re-pokes a
-// resumed session even though the error text is still on screen.
 test('a transient error stops nudging once a real response appears below it', async () => {
   const cfg = { ...CONFIG, transientWaitSeconds: 10, transientMaxWaitSeconds: 40 };
   const state = createMonitorState();
@@ -359,8 +325,6 @@ test('a reset wait ends when the banner clears, not when herdr says working', as
   const state = createMonitorState();
   const a = adapter({ text: LIMIT_TEXT, eligible: true });
   await processOneTick(state, a, CONFIG, 0); // -> waiting
-  // herdr reporting `working` can be a stale spinner glyph (D17), so on its own
-  // it must not discard a wait whose limit is still plainly on screen.
   a._eligible = false;
   assert.equal(await processOneTick(state, a, CONFIG, 3_600_001), 'retried', 'it resumes rather than abandoning the pane');
   a._text = NORMAL_TEXT; // the banner is gone: that is the real signal
@@ -397,8 +361,7 @@ test('resets to monitoring when the limit cleared by the deadline', async () => 
   assert.equal(a.recovered, 0);
 });
 
-// Issue #1: never get stuck skipping forever. herdr's own agent detection
-// gates the send instead of a fragile `ps`/pane_current_command check.
+// herdr's own agent detection gates the send, not a fragile ps/pane_current_command check.
 test('skips the send when herdr no longer sees a Claude agent', async () => {
   const state = createMonitorState();
   const a = adapter({ text: LIMIT_TEXT, claude: false });
@@ -426,8 +389,6 @@ test('exits when the pane disappears', async () => {
   assert.equal(await processOneTick(state, a, CONFIG, 0), 'exit');
 });
 
-// A transient empty/failed read at the deadline must never be read as "the limit
-// cleared" - that would silently abandon the resume.
 test('empty read at the deadline stays waiting, never concludes cleared', async () => {
   const state = createMonitorState();
   const a = adapter({ text: LIMIT_TEXT });
@@ -449,8 +410,6 @@ test('failed read (null) at the deadline stays waiting', async () => {
   assert.equal(a.recovered, 0);
 });
 
-// While merely waiting for the reset we must not read the pane at all, so a read
-// failure during a long wait cannot accumulate toward shutdown.
 test('does not read the pane while waiting before the deadline', async () => {
   const state = createMonitorState();
   const a = adapter({ text: LIMIT_TEXT });
@@ -464,11 +423,6 @@ test('does not read the pane while waiting before the deadline', async () => {
   assert.equal(reads, 0);
 });
 
-// A blocked pane is waiting on a human: a permission request, or the
-// /rate-limit-options menu. A dropped connection leaves Claude idle, never
-// blocked, so a transient error on a blocked pane is stale text above a live
-// prompt - and recovering would answer that prompt for the user. Reset limits
-// still fire, which is why `blocked` is in eligibleStates at all.
 test('a transient error never fires on a blocked pane, but a reset limit still does', async () => {
   const withPrompt = [
     '⏺ API Error: Connection closed mid-response. The response above may be incomplete.', '',
@@ -482,15 +436,11 @@ test('a transient error never fires on a blocked pane, but a reset limit still d
   assert.equal(await processOneTick(s1, a1, CONFIG, T0), 'monitoring', 'must not answer a permission prompt');
   assert.equal(a1.recovered, 0);
 
-  // The menu case is a reset limit and must still be handled.
   const s2 = createMonitorState();
   const a2 = blockedPane(`${LIMIT_TEXT}\n  1. Upgrade your plan\n  2. Wait`);
   assert.equal(await processOneTick(s2, a2, CONFIG, T0), 'waiting', 'the rate-limit menu still engages');
 });
 
-// A blank or failed read is not evidence of anything (D7). It must not discard
-// the retry budget carried in from a prior monitor, which would let one herdr
-// hiccup reset an episode that had already exhausted its attempts.
 test('a blank read never resets the carried retry budget', async () => {
   const state = createMonitorState({ nudges: 3, lastKind: 'transient', lastStuck: false, frozenMs: 0, stuckSig: null });
   const a = adapter({ text: '   \n  ' });
@@ -504,10 +454,7 @@ test('a blank read never resets the carried retry budget', async () => {
   assert.equal(state.nudges, 0, 'a genuinely clean screen does end the episode');
 });
 
-// The stuck clock measures a WORKING pane being frozen. Banking time while the
-// pane is idle and the ordinary transient path is handling it would leave the
-// clock already full the moment herdr flips to working, so the takeover would
-// fire with no fresh observation at all.
+// Banking time while idle would leave the clock already full the moment herdr flips to working.
 test('the stuck clock only runs while herdr reports the pane working', async () => {
   const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5 };
   const state = createMonitorState();
@@ -520,7 +467,6 @@ test('the stuck clock only runs while herdr reports the pane working', async () 
   assert.equal(a.recovered, before, 'the takeover must still observe a full fresh window');
 });
 
-// Coverage the review found missing: clearing the clock when the episode ends.
 test('the stuck clock is cleared when the pane genuinely comes back', async () => {
   const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5 };
   const state = createMonitorState();
@@ -533,8 +479,6 @@ test('the stuck clock is cleared when the pane genuinely comes back', async () =
   assert.equal(state.stuckSig, null);
 });
 
-// Isolated from the re-arm: with transient handling off nothing recovers, so the
-// only thing that can keep the clock at zero on an idle pane is the watching gate.
 test('the stuck clock does not bank time on an idle pane even when nothing recovers', async () => {
   const cfg = { ...CONFIG, handleTransient: false, handleStuckWorking: true, stuckWorkingMinutes: 5 };
   const state = createMonitorState();
@@ -543,8 +487,6 @@ test('the stuck clock does not bank time on an idle pane even when nothing recov
   assert.equal(state.frozenMs, 0, 'an idle pane is the ordinary path, not a stuck takeover');
 });
 
-// Each takeover must be earned by a fresh frozen window. Backoff alone is not
-// enough: with a fast backoff, a missing re-arm fires again within seconds.
 test('a stuck takeover re-arms, so the next one needs another full window', async () => {
   const cfg = {
     ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5,
@@ -560,10 +502,7 @@ test('a stuck takeover re-arms, so the next one needs another full window', asyn
   assert.equal(a.recovered, 2, 'a second full frozen window does');
 });
 
-// D17's justification is that a working pane keeps producing output. That is
-// false for the duration of one long tool call, so a `⎿` result that merely
-// CONTAINS an API-error string must never justify a takeover - only Claude's own
-// `⏺ API Error:` line does.
+// Only Claude's own `⏺ API Error:` line counts (D27); a `⎿` result merely containing error text does not.
 test('a long tool call whose output mentions an API error is not a stall', async () => {
   const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5 };
   const state = createMonitorState();
@@ -575,9 +514,6 @@ test('a long tool call whose output mentions an API error is not a stall', async
   assert.equal(a.recovered, 0, 'a busy pane running a long tool call must be left alone');
 });
 
-// lastStuck says "this episode is running despite herdr reporting working", so
-// it cannot survive herdr correcting itself: it drives both the sidebar label
-// and the log tag.
 test('lastStuck clears as soon as herdr reports the pane stopped again', async () => {
   const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5 };
   const state = createMonitorState();
@@ -589,9 +525,6 @@ test('lastStuck clears as soon as herdr reports the pane stopped again', async (
   assert.equal(state.lastStuck, false, 'ordinary handling has taken back over');
 });
 
-// A pane going blocked mid-episode is waiting on the user, not recovered. Ending
-// the episode there both logs a false "cleared" and abandons the pane, because
-// the monitoring path can never re-engage a blocked transient.
 test('a pane that becomes blocked pauses the episode instead of ending it', async () => {
   const state = createMonitorState();
   const a = adapter({ text: TRANSIENT_TEXT, eligible: true });
@@ -605,9 +538,6 @@ test('a pane that becomes blocked pauses the episode instead of ending it', asyn
   assert.equal(await processOneTick(state, a, CONFIG, T0 + 4 * MIN), 'retried', 'and resumes once unblocked');
 });
 
-// attempts (the reset maxRetries cap) and nudges (the transient backoff
-// exponent) are different budgets. Carrying the cap would let a successor
-// inherit an exhausted one and never send a single resume.
 test('a successor inherits the backoff exponent but not the reset retry cap', async () => {
   const cfg = { ...CONFIG, maxRetries: 3 };
   const gen1 = createMonitorState();
@@ -624,12 +554,7 @@ test('a successor inherits the backoff exponent but not the reset retry cap', as
   assert.ok(b.recovered >= 1, 'so it can still resume the pane');
 });
 
-// ── PR #2 (astorozhevsky): the 2026-08-12 incident ─────────────────────────
-// A session limit landed at 20:37:41 and the plugin stayed silent until
-// 20:44:19, because Claude Code held a spinner up for those 6.5 minutes while it
-// drained queued teammate messages - so herdr reported the pane as "working" and
-// the eligibility gate discarded the limit. Detection must not depend on the
-// pane having gone idle yet (D28).
+// PR #2 (2026-08-12 incident, D28): a spinner held up during queued-message drain must not block detection.
 function limitScreen(counter) {
   return [
     '⏺ Bash(git push origin main)',
@@ -657,8 +582,6 @@ test('a working pane arms the wait when the limit stays the newest output for tw
   assert.equal(a.recovered, 0, 'arming never types into a working pane');
 });
 
-// A pane that is actually streaming produces a new output block between polls,
-// so the two-poll confirmation never passes on it.
 test('a streaming pane never confirms the arm', async () => {
   const state = createMonitorState();
   const a = adapter({ text: limitScreen(2), eligible: false });
@@ -668,9 +591,6 @@ test('a streaming pane never confirms the arm', async () => {
   assert.equal(state.status, 'monitoring');
 });
 
-// The narrow gate that keeps the above from re-opening the false-resume hole the
-// eligibility check was there to close: on a working pane, a limit anywhere but
-// the newest output block is scrollback, and scrollback is not news.
 test('a working pane ignores a limit that only sits in the scrollback', async () => {
   const state = createMonitorState();
   const scrollback = [
@@ -683,9 +603,7 @@ test('a working pane ignores a limit that only sits in the scrollback', async ()
   assert.equal(state.status, 'monitoring');
 });
 
-// A 5xx on a busy pane is Claude Code's own retry to make, not ours - the
-// working-pane exception is reset-only (a single tick can never trip the
-// stuck-working path either, which needs stuckWorkingMinutes of frozen output).
+// Working-pane arming is reset-only; a transient 5xx is Claude Code's own retry to make.
 test('a working pane never arms on a transient server error in one tick', async () => {
   const state = createMonitorState();
   const a = adapter({ text: '⏺ API Error: 529 Overloaded.', eligible: false });
@@ -693,8 +611,6 @@ test('a working pane never arms on a transient server error in one tick', async 
   assert.equal(a.recovered, 0);
 });
 
-// End to end on the incident sequence: arm while the spinner is still up, then
-// resume once the reset passes and the pane has actually gone idle.
 test('armed while working, resumes once the deadline passes and the pane is idle', async () => {
   const state = createMonitorState();
   const a = adapter({ text: limitScreen(2), eligible: false });
@@ -708,9 +624,6 @@ test('armed while working, resumes once the deadline passes and the pane is idle
   assert.equal(a.recovered, 1);
 });
 
-// The send is gated on the pane having actually stopped: a deadline that passes
-// while herdr still reports working requeues instead of typing (and Escape,
-// which the reset path sends, never lands in a live turn).
 test('armed while working, the deadline send waits for the pane to stop', async () => {
   const state = createMonitorState();
   const a = adapter({ text: limitScreen(2), eligible: false });
@@ -730,9 +643,7 @@ test('armed while working, the deadline send waits for the pane to stop', async 
   assert.equal(a.recovered, 1);
 });
 
-// Regression fixtures from the same PR for behaviour main already has (D24):
-// standing down needs the session to have visibly moved on, and chrome churn
-// alone is never that evidence.
+// D24: standing down needs visible progress; chrome churn (spinner, counters) alone is never evidence.
 test('stands down when the pane is busy again with new output', async () => {
   const state = createMonitorState();
   const a = adapter({ text: limitScreen(2), eligible: true });

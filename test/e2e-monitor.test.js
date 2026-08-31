@@ -1,7 +1,4 @@
-// End-to-end coverage for bin/main.js (the monitor loop, the recovery, the
-// sidebar indicator, the lock lifecycle, and the self-exclusion) by driving the
-// real entrypoint against the fake herdr binary. This is the layer the unit
-// tests do not reach, and the one every past incident lived in.
+// E2E coverage for bin/main.js: drives the real entrypoint against the fake herdr binary, the layer unit tests do not reach.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -78,7 +75,6 @@ test('monitor: detect -> engage label -> recover (text/enter, no esc) -> clear o
     assert.ok(fired, 'engaged label + recovery should fire within timeout');
     assert.ok(!fired.some((c) => c[0] === 'send-keys' && c.includes('esc')), 'an idle pane is never sent Escape (D22)');
     assert.ok(fired.some((c) => c[0] === 'send-text'), 'retry text sent');
-    // The session resumes: footer no longer limited and the pane goes working.
     t.setState({
       panes: [{ pane_id: 'w1:p1', terminal_id: 't1', agent: 'claude', agent_status: 'working', cwd: '/x/proj' }],
       read: 'back to work',
@@ -104,8 +100,7 @@ test('monitor exits itself when superseded (a different live pid reclaims its lo
   try {
     const claimed = await waitFor(() => t.locks().includes('t1.json'));
     assert.ok(claimed, 'monitor claimed its lock');
-    // Simulate a sleep/wake reclaim: a different LIVE pid (this test runner) now
-    // owns the lock. Re-assert each poll so a tick's lock refresh cannot race it.
+    // Re-steal the lock each poll so a tick's own lock refresh cannot win the race.
     const lockPath = join(t.procEnv.HERDR_PLUGIN_STATE_DIR, 'monitors', 't1.json');
     const steal = () => writeFileSync(lockPath, JSON.stringify({
       terminalId: 't1', pid: process.pid, paneId: 'w1:p1', agent: 'claude',
@@ -155,9 +150,6 @@ test('hook DOES start a monitor for a normal Claude pane', async () => {
   }
 });
 
-// The coverage-recovery sweep: one hook fire re-attaches monitors to EVERY Claude
-// pane, not just the one that changed. This is what heals a herdr restart (which
-// emits no event), so a monitor that died is replaced on the next pane activity.
 test('one hook fire re-establishes coverage for all Claude panes (restart sweep)', async () => {
   const t = setup();
   t.setState({
@@ -182,9 +174,7 @@ test('one hook fire re-establishes coverage for all Claude panes (restart sweep)
   }
 });
 
-// The D19 handoff, end to end. The unit tests prove the state model; these two
-// prove the wiring, which is where it would silently die: the monitor has to
-// WRITE the state, and nothing else may delete it before its successor reads it.
+// The D19 handoff, end to end: the monitor must WRITE its state, and nothing else may delete it before a successor reads it.
 const readLock = (t, file) => JSON.parse(readFileSync(join(t.procEnv.HERDR_PLUGIN_STATE_DIR, 'monitors', file), 'utf8'));
 
 test('a running monitor persists its episode state into the lock record', async () => {
@@ -231,10 +221,7 @@ test('status prunes records for vanished panes but keeps a stale one whose pane 
   assert.ok(!t.locks().includes('t-gone.json'), 'a record whose pane is gone is still pruned');
 });
 
-// herdr.paneList() returns [] on ANY failure (crash, restart, timeout, bad JSON),
-// so a single blip used to look identical to "the pane closed" and shut the
-// monitor down - deleting the lock record and the episode state it carries. That
-// is worse than the stale-record prune D19 already forbids.
+// herdr.paneList() returns [] on ANY failure; a blip must not read as "pane closed" and delete the carried state.
 test('a single failed pane list does not delete the monitor or its carried state', async () => {
   const t = setup();
   const live = {

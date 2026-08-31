@@ -1,8 +1,4 @@
-// Things that must be true to ship. A plain `herdr plugin install` takes the
-// default branch, so pushing `main` publishes immediately and nothing here is
-// caught later by a release step (`--ref` pinning is opt-in, per user). The
-// duplicated facts below have drifted before (a blanket count bump once rewrote
-// the shipped 1.0.0 changelog entry), which is why they are asserted.
+// Ship-readiness checks: pushing main IS the release (no gate after), so these duplicated facts are asserted here because they have drifted before.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -33,9 +29,7 @@ test('every manifest command runs a subcommand bin/main.js actually dispatches',
   }
 });
 
-// Without the startup hook, coverage after a herdr restart waits on the first
-// pane activity - an 11-minute gap in the run that motivated adding it. The hook
-// is the reason the floor is 0.7.5, so the two assertions belong together.
+// Missing this hook left an 11-minute coverage gap after a herdr restart; it's why the floor is 0.7.5.
 test('the startup hook is declared, and the version floor supports it', () => {
   assert.match(manifest, /\[\[startup\]\]\s*\ncommand = \["\/bin\/sh", "launch\.sh", "watch-all"\]/);
   const floor = manifest.match(/^min_herdr_version = "(.+)"$/m)[1].split('.').map(Number);
@@ -57,8 +51,6 @@ test('the current version has a CHANGELOG section, and every released one has a 
   }
 });
 
-// The README badge and the contributor quickstart both quote the test count, and
-// the herdr floor is stated in three places. Keep them honest against the source.
 // Same scan the pre-push hook runs; see scripts/scan-private.mjs for why.
 test('no private content in tracked files', () => {
   const local = localPatterns(join(repo, '.private-markers'));
@@ -66,8 +58,7 @@ test('no private content in tracked files', () => {
   assert.deepEqual(hits, [], hits.map((h) => `${h.file}: ${h.what}: ${h.sample}`).join('\n'));
 });
 
-// The scan is only as good as its patterns, and a silently-weakened guard is
-// worse than none: assert each class still bites.
+// A silently-weakened scan is worse than none: assert each pattern class still bites.
 test('the leak scan catches each class it claims to', () => {
   const probes = {
     'src/x.js': 'see CP-D94 for the rationale',
@@ -82,9 +73,7 @@ test('the leak scan catches each class it claims to', () => {
   assert.deepEqual(scan(['a.md'], () => 'D19 supersedes D8, see docs/configuration.md', GENERIC), []);
 });
 
-// CONTRIBUTING: "no code comments (the code and tests are the documentation;
-// design rationale goes in AGENTS.md)". v1.0.0 shipped src/ and bin/ with zero,
-// and the convention drifts the moment it is only written down.
+// CONTRIBUTING: rationale lives in AGENTS.md, not code comments; v1.0.0 shipped src/ and bin/ at zero.
 test('src/ and bin/ carry no code comments', () => {
   const offenders = trackedFiles(repo)
     .filter((f) => /^(src|bin)\/.+\.js$/.test(f))
@@ -93,9 +82,7 @@ test('src/ and bin/ carry no code comments', () => {
   assert.deepEqual(offenders, [], `move the rationale to AGENTS.md: ${JSON.stringify(offenders)}`);
 });
 
-// bin/main.js reads the monitor state for its logging and the sidebar label. A
-// renamed field there is silently `undefined`: no crash, no failing test, just a
-// log line that never fires. That happened to state.stuckSince -> frozenMs.
+// A renamed state field silently logs undefined with no failing test (happened: stuckSince -> frozenMs).
 test('bin/main.js only reads monitor-state fields that exist', () => {
   const known = new Set(Object.keys(createMonitorState()));
   const used = [...read('bin', 'main.js').matchAll(/\bstate\.([A-Za-z_]\w*)/g)].map((m) => m[1]);
@@ -110,9 +97,7 @@ test('the documented herdr floor matches the manifest', () => {
   }
 });
 
-// The transient path counts `nudges` and the reset path counts `attempts`
-// (D26). Logging the wrong one is invisible to the field-existence check above,
-// because both fields exist - it just always printed "attempt 0".
+// nudges (transient) and attempts (reset) are different counters (D26); logging the wrong one printed "attempt 0" forever.
 test('each retry path logs its own counter', () => {
   const main = read('bin', 'main.js');
   const line = main.split('\n').find((l) => l.includes('nudged (attempt'));

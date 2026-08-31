@@ -14,9 +14,7 @@ function mockHerdr() {
 
 const CFG = { ...DEFAULT_CONFIG, menuDismissDelayMs: 0, submitDelayMs: 0, retryMessage: 'go on' };
 
-// Escape is the only keystroke here that can destroy work: on a live turn it
-// interrupts, at a permission prompt it cancels. It exists for one thing, the
-// /rate-limit-options menu, and a menu means the pane is blocked (D22).
+// Escape is the one keystroke that can destroy work (interrupts a turn, cancels a prompt); it exists only for the /rate-limit-options menu, so it's gated on blocked (D22).
 test('a blocked pane gets Escape first, so Enter cannot confirm a menu option', async () => {
   const h = mockHerdr();
   await recover(h, '1-2', CFG, { blocked: true });
@@ -36,15 +34,12 @@ test('a pane that is not blocked is never sent Escape', async () => {
   ]);
 });
 
-// Every limit observed in production so far renders as an idle output line, not
-// a menu, so this is the common path.
 test('recovery defaults to no Escape when the caller says nothing', async () => {
   const h = mockHerdr();
   await recover(h, '1-2', CFG);
   assert.equal(h.calls[0][0], 'send-text');
 });
 
-// Issue #7: text and Enter are SEPARATE calls, so Enter is not swallowed as a newline.
 test('text and Enter are never combined into one request', async () => {
   const h = mockHerdr();
   await recover(h, '1-2', CFG, { blocked: true });
@@ -59,13 +54,8 @@ test('dismissMenu=false skips the Escape even on a blocked pane', async () => {
   assert.ok(!h.calls.some((c) => c.includes('esc')));
 });
 
-// ── PR #3 (astorozhevsky): vim editor mode eats the first character ─────────
-// D30: the menu-dismissing Escape is also a vim mode switch, so on a blocked
-// (reset-menu) recovery the first character of the message runs as a vim command
-// instead of typing - "C" is change-to-end-of-line, and Claude receives
-// "ontinue where you left off." (17 of 20 resumes in one live week). The typed
-// message is echoed into the `❯` input line before Enter, so recovery reads it
-// back and retypes once when the first character is missing.
+// D30: Escape is also a vim-mode switch, so on a blocked recovery it can eat the message's first character ('C' -> change-to-eol; 17 of 20 resumes in one live week).
+// The typed message is echoed into the â¯ line before Enter, so recovery reads it back and retypes once if the first character is missing.
 
 function mockHerdrWithReads(screens) {
   const h = mockHerdr();
@@ -116,8 +106,6 @@ test('classifyTypedInput separates an intact echo from a first-character-eaten o
   assert.equal(classifyTypedInput(null, MSG), 'unknown');
 });
 
-// An earlier nudge sitting in the transcript must not read as this one arriving
-// intact: only the live prompt line counts.
 test('classifyTypedInput ignores an intact copy of the message above the prompt line', () => {
   const screen = ['⏺ Continue where you left off.', '─────', '❯ ontinue where you left off.', '─────'].join('\n');
   assert.equal(classifyTypedInput(screen, MSG), 'eaten');
@@ -145,7 +133,6 @@ test('recovery types once when the prompt line already holds the whole message',
   assert.equal(h.reads, 1);
 });
 
-// A failed or unreadable read is not evidence of anything: never retype on a guess.
 test('recovery does not retype when the screen cannot be read', async () => {
   for (const screen of [null, '', 'no prompt line at all']) {
     const h = mockHerdrWithReads([screen]);
@@ -177,10 +164,7 @@ test('an adapter without paneRead falls back to typing once', async () => {
   assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
 });
 
-// Review hardening on the PR: `eaten` is an equality test on the live `❯` line
-// (a draft ending in the message tail must never be ctrl+u'd away), the verify
-// only runs when an Escape was actually sent (the only path that can mangle),
-// and a transcript `> text` echo is not an input line.
+// PR review hardening: 'eaten' is exact-match on the live â¯ line only (a draft ending in the tail is 'unknown'), verify only runs after an Escape, and a transcript '> text' echo is not an input line.
 test('a draft that happens to end with the message tail is unknown, never eaten', () => {
   assert.equal(classifyTypedInput(screenWith('please investigate the 529 ontinue where you left off.'), MSG), 'unknown');
 });

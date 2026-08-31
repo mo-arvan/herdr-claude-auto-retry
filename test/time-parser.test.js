@@ -31,7 +31,7 @@ test('relative wait adds the margin', () => {
   assert.equal(ms, 5 * 60_000 + 60_000);
 });
 
-// Issue #6 / #9 / #4: east-of-UTC zones must NOT over-wait by ~24h.
+// East-of-UTC zones must not over-wait by ~24h (the fix for D4).
 test('Asia/Tokyo reset later the same day is ~10h, not ~25h (#6)', () => {
   // now = 2026-04-15 09:43 JST (00:43 UTC). Reset 8pm JST = 11:00 UTC same day.
   const now = new Date('2026-04-15T00:43:00Z');
