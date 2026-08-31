@@ -286,7 +286,7 @@ async function monitor() {
       blocked: () => pane.agent_status === 'blocked',
       isClaude: async () => isClaudeAgent(pane),
       read: async () => herdr.paneRead(pane.pane_id, { source: config.readSource, lines: config.readLines }),
-      recover: async () => recover(herdr, pane.pane_id, config, { blocked: pane.agent_status === 'blocked' || state.lastKind === 'reset' }),
+      recover: async () => recover(herdr, pane.pane_id, config, { blocked: pane.agent_status === 'blocked' || state.lastKind === 'reset', log: (msg) => logger.info(msg) }),
     };
 
     try {

@@ -19,6 +19,11 @@ Notable changes, newest first. This project follows [Semantic Versioning](https:
   report armed a 7-hour wait on its own markdown table; a line with three or more column separators
   is now never a limit candidate, while the boxed `/rate-limit-options` menu (two borders per line)
   still detects.
+- Recovery no longer loses the first character of `retryMessage` when Claude Code runs in vim editor
+  mode. The Escape that dismisses the `/rate-limit-options` menu also switches the input line to
+  NORMAL, where the first character is executed as a vim command rather than typed, so Claude
+  received `ontinue where you left off.`. The message is now read back off the `❯` input line and
+  retyped once when its first character is missing (`verifyInput`, default `true`).
 
 ## [1.1.0] - 2026-08-31
 

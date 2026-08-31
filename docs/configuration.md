@@ -25,6 +25,7 @@ Running monitors re-read this file every poll, so edits take effect on their own
 | `detectionTailLines` | `15` | Tail window for rate-limit detection. Transient server errors are not bound by it: they anchor to the latest on-screen output block, so a long task list cannot push the error out of view. |
 | `dismissMenu` | `true` | Send Escape before resuming, but only when the pane is blocked at a prompt (dismisses the `/rate-limit-options` menu). Never sent to an idle or working pane, where it would interrupt the turn. |
 | `menuDismissDelayMs` | `300` | Pause after Escape. |
+| `verifyInput` | `true` | Before pressing Enter, read back the `❯` input line and retype the message once if its first character was eaten (Claude Code's vim editor mode runs it as a command). |
 | `submitDelayMs` | `400` | Pause between typing the message and pressing Enter. |
 | `eligibleStates` | `["idle","blocked","done"]` | Pane states the plugin may send to. `working` is never allowed (it is stripped in validation); a working pane can still arm a wait when a reset limit is its latest output. |
 | `engagedLabel` | `"retry engaged"` | Label reported on a pane while it waits out a limit. See below for showing it. |

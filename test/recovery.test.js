@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { recover } from '../src/recovery.js';
+import { recover, readInputLine, classifyTypedInput } from '../src/recovery.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
 
 function mockHerdr() {
@@ -57,4 +57,122 @@ test('dismissMenu=false skips the Escape even on a blocked pane', async () => {
   await recover(h, '1-2', { ...CFG, dismissMenu: false }, { blocked: true });
   assert.equal(h.calls[0][0], 'send-text');
   assert.ok(!h.calls.some((c) => c.includes('esc')));
+});
+
+// ── PR #3 (astorozhevsky): vim editor mode eats the first character ─────────
+// D30: the menu-dismissing Escape is also a vim mode switch, so on a blocked
+// (reset-menu) recovery the first character of the message runs as a vim command
+// instead of typing - "C" is change-to-end-of-line, and Claude receives
+// "ontinue where you left off." (17 of 20 resumes in one live week). The typed
+// message is echoed into the `❯` input line before Enter, so recovery reads it
+// back and retypes once when the first character is missing.
+
+function mockHerdrWithReads(screens) {
+  const h = mockHerdr();
+  const queue = [...screens];
+  h.reads = 0;
+  h.paneRead = async () => {
+    h.reads++;
+    return queue.length > 1 ? queue.shift() : queue[0];
+  };
+  return h;
+}
+
+const MSG = 'Continue where you left off.';
+const VCFG = { ...DEFAULT_CONFIG, menuDismissDelayMs: 0, submitDelayMs: 0, retryMessage: MSG };
+
+function screenWith(inputText) {
+  return [
+    '⏺ Working on it.',
+    '─────────────────────────────',
+    `❯ ${inputText}`,
+    '─────────────────────────────',
+    '  repo | Opus 5',
+    '  -- INSERT -- ⏵⏵ bypass permissions on',
+  ].join('\n');
+}
+
+test('readInputLine reads the echoed message out of the prompt line', () => {
+  assert.equal(readInputLine(screenWith(MSG)), MSG);
+  assert.equal(readInputLine(screenWith('ontinue where you left off.')), 'ontinue where you left off.');
+  assert.equal(readInputLine(screenWith('')), '');
+});
+
+test('readInputLine strips ANSI and joins a wrapped message, stopping at the box border', () => {
+  const screen = ['\x1b[2m─────\x1b[0m', '\x1b[1m❯\x1b[0m Continue where you', '  left off.', '─────', '  repo | Opus 5'].join('\n');
+  assert.equal(readInputLine(screen), MSG);
+});
+
+test('readInputLine returns null when the screen has no prompt line', () => {
+  assert.equal(readInputLine('⏺ no input box here\n─────'), null);
+  assert.equal(readInputLine(''), null);
+  assert.equal(readInputLine(null), null);
+});
+
+test('classifyTypedInput separates an intact echo from a first-character-eaten one', () => {
+  assert.equal(classifyTypedInput(screenWith(MSG), MSG), 'intact');
+  assert.equal(classifyTypedInput(screenWith('ontinue where you left off.'), MSG), 'eaten');
+  assert.equal(classifyTypedInput(screenWith('some other text'), MSG), 'unknown');
+  assert.equal(classifyTypedInput(null, MSG), 'unknown');
+});
+
+// An earlier nudge sitting in the transcript must not read as this one arriving
+// intact: only the live prompt line counts.
+test('classifyTypedInput ignores an intact copy of the message above the prompt line', () => {
+  const screen = ['⏺ Continue where you left off.', '─────', '❯ ontinue where you left off.', '─────'].join('\n');
+  assert.equal(classifyTypedInput(screen, MSG), 'eaten');
+});
+
+test('recovery clears and retypes when the prompt line lost the first character', async () => {
+  const h = mockHerdrWithReads([screenWith('ontinue where you left off.'), screenWith(MSG)]);
+  const logs = [];
+  await recover(h, '1-2', VCFG, { blocked: true, log: (m) => logs.push(m) });
+  assert.deepEqual(h.calls, [
+    ['send-keys', '1-2', 'esc'],
+    ['send-text', '1-2', MSG],
+    ['send-keys', '1-2', 'ctrl+u'],
+    ['send-text', '1-2', MSG],
+    ['send-keys', '1-2', 'enter'],
+  ]);
+  assert.match(logs[0], /repaired/);
+});
+
+test('recovery types once when the prompt line already holds the whole message', async () => {
+  const h = mockHerdrWithReads([screenWith(MSG)]);
+  await recover(h, '1-2', VCFG, { blocked: true });
+  assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
+  assert.ok(!h.calls.some((c) => c.includes('ctrl+u')));
+  assert.equal(h.reads, 1);
+});
+
+// A failed or unreadable read is not evidence of anything: never retype on a guess.
+test('recovery does not retype when the screen cannot be read', async () => {
+  for (const screen of [null, '', 'no prompt line at all']) {
+    const h = mockHerdrWithReads([screen]);
+    await recover(h, '1-2', VCFG, { blocked: true });
+    assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
+    assert.ok(!h.calls.some((c) => c.includes('ctrl+u')));
+  }
+});
+
+test('recovery still submits when the repair did not take', async () => {
+  const h = mockHerdrWithReads([screenWith('ontinue where you left off.')]);
+  const logs = [];
+  await recover(h, '1-2', VCFG, { blocked: true, log: (m) => logs.push(m) });
+  assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 2);
+  assert.deepEqual(h.calls.at(-1), ['send-keys', '1-2', 'enter']);
+  assert.match(logs[0], /still not verified/);
+});
+
+test('verifyInput=false never reads the pane', async () => {
+  const h = mockHerdrWithReads([screenWith('ontinue where you left off.')]);
+  await recover(h, '1-2', { ...VCFG, verifyInput: false }, { blocked: true });
+  assert.equal(h.reads, 0);
+  assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
+});
+
+test('an adapter without paneRead falls back to typing once', async () => {
+  const h = mockHerdr();
+  await recover(h, '1-2', VCFG, { blocked: true });
+  assert.equal(h.calls.filter((c) => c[0] === 'send-text').length, 1);
 });

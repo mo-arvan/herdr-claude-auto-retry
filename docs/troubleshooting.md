@@ -81,6 +81,13 @@ Claude Code's on-screen text is not a stable API, so a phrasing the plugin looks
 - For a server error, repeated nudging is expected. The plugin retries with exponential backoff up to five minutes, and stops once Claude's latest output is a real response rather than an error.
 - Two monitors acting on one pane is not expected. It can happen after the machine sleeps and wakes. Compare `pgrep -fl 'main.js monitor'` to the lock files: a monitor process whose terminal has no matching lock is stale. Run `stop` then `watch-all` to clear it.
 
+## Claude received the message with its first character missing
+
+- Symptom: the log says `resumed`, but Claude got `ontinue where you left off.` instead of `Continue where you left off.`
+- Cause: Claude Code's vim editor mode (`"editorMode": "vim"`). The Escape that dismisses a menu (sent when the pane is blocked or the limit is a reset) also leaves the input line in NORMAL mode, where the first character of the message runs as a vim command rather than being typed - `C` is change-to-end-of-line, which enters INSERT and lets the rest through as text.
+- The plugin detects this on the echoed input line and retypes the message before submitting; the log records `input repaired (vim normal mode ate the first character)`. If you see the symptom anyway, check that `verifyInput` is not turned off, and that pane reads work (`herdr pane read <pane> --source visible`).
+- A `retryMessage` whose first character is a vim command that does not enter INSERT (`P`, `d`, `y`, ...) mangles differently and is not repairable; start the message with an ordinary word.
+
 ## The message was typed but Claude did not continue
 
 - Recovery sends Escape, then the message, then Enter as separate keystrokes. If Claude is in some other interactive state (a different menu, a permission prompt), the message may not be read as a continuation.

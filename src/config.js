@@ -19,6 +19,7 @@ export const DEFAULT_CONFIG = {
   readLines: 40,
   detectionTailLines: 15,
   dismissMenu: true,
+  verifyInput: true,
   menuDismissDelayMs: 300,
   submitDelayMs: 400,
   eligibleStates: ['idle', 'blocked', 'done'],
@@ -72,6 +73,7 @@ function validate(cfg) {
     cfg.readSource = DEFAULT_CONFIG.readSource;
   }
   if (typeof cfg.dismissMenu !== 'boolean') cfg.dismissMenu = DEFAULT_CONFIG.dismissMenu;
+  if (typeof cfg.verifyInput !== 'boolean') cfg.verifyInput = DEFAULT_CONFIG.verifyInput;
 
   if (!Array.isArray(cfg.eligibleStates)) {
     cfg.eligibleStates = [...DEFAULT_CONFIG.eligibleStates];
