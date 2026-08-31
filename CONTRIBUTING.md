@@ -31,13 +31,13 @@ git config core.hooksPath .githooks
 
 ## Keeping private material out
 
-The test fixtures here are screenshots of real Claude sessions, so a careless paste publishes whatever was on that screen. One fixture did carry verbatim task descriptions from an unpublished research project, caught before it was pushed.
+The test fixtures here are screenshots of real Claude sessions, so a careless paste publishes whatever was on that screen. One fixture once carried verbatim content from an unrelated session, caught before it was pushed.
 
 `npm run scan` (also `npm test`, also every `git push` once the hook is enabled) checks every tracked file for absolute home paths, email addresses, token-shaped strings, prefixed cross-project decision and defect tags (a project abbreviation, a hyphen, `D` or `X`, a number), private workspace paths, and `Status:` / `Next:` / `Blockers:` handoff lines. This repo's own decision tags are bare (`D19`), and deliberately do not match.
 
 Maintainer-specific names (private project names, research topics) go in `.private-markers`, one regex per line, gitignored. That file is not committed for the obvious reason: a denylist of private names, published in a public repo, leaks exactly what it protects. Absent, the scan silently falls back to the generic patterns, so if you rely on it, keep it durable: symlink it (and `PROGRESS.md`) at a file in a private repo rather than leaving it as the only copy on one disk.
 
-When scrubbing a fixture, keep its shape and drop its content. The D18 fixture needs a task list long enough to push the error out of a 15-line window; what the individual task lines actually say is irrelevant to what it tests, so make them generic.
+When scrubbing a fixture, keep its shape and drop its content. The stalled-screen fixture (AGENTS.md D18) needs a task list long enough to push the error out of a 15-line window; what the individual task lines actually say is irrelevant to what it tests, so make them generic.
 
 ## Layout: where logic lives
 
