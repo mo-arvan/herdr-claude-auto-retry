@@ -27,24 +27,11 @@ test('a blocked pane gets Escape first, so Enter cannot confirm a menu option', 
 
 test('a pane that is not blocked is never sent Escape', async () => {
   const h = mockHerdr();
-  await recover(h, '1-2', CFG, { blocked: false });
+  await recover(h, '1-2', CFG);
   assert.deepEqual(h.calls, [
     ['send-text', '1-2', 'go on'],
     ['send-keys', '1-2', 'enter'],
   ]);
-});
-
-test('recovery defaults to no Escape when the caller says nothing', async () => {
-  const h = mockHerdr();
-  await recover(h, '1-2', CFG);
-  assert.equal(h.calls[0][0], 'send-text');
-});
-
-test('text and Enter are never combined into one request', async () => {
-  const h = mockHerdr();
-  await recover(h, '1-2', CFG, { blocked: true });
-  const combined = h.calls.find((c) => c[0] === 'send-text' && c.includes('enter'));
-  assert.equal(combined, undefined);
 });
 
 test('dismissMenu=false skips the Escape even on a blocked pane', async () => {

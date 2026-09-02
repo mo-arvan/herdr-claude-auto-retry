@@ -1,20 +1,22 @@
 
-const RESET_TIME_REGEX = /resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:\(([^)]+)\))?/i;
+const RESET_TIME_REGEX = /resets?\s+(?:at\s+)?(?:((?:mon|tue|wed|thu|fri|sat|sun))[a-z]*,?\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:\(([^)]+)\))?/i;
+const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const RELATIVE_TIME_REGEX = /(?:try again|wait|resets?\s+in)[:\s]\s*(?:for\s+)?(?:in\s+)?(\d+)\s*(hours?|minutes?|mins?|h|m)\b/i;
 
 export function parseResetTime(text) {
   const absMatch = text.match(RESET_TIME_REGEX);
   if (absMatch) {
-    let hour = parseInt(absMatch[1], 10);
-    const minute = absMatch[2] ? parseInt(absMatch[2], 10) : 0;
-    const ampm = absMatch[3]?.toLowerCase() || null;
-    const timezone = absMatch[4] || null;
+    const weekday = absMatch[1] ? WEEKDAYS.indexOf(absMatch[1].toLowerCase()) : null;
+    let hour = parseInt(absMatch[2], 10);
+    const minute = absMatch[3] ? parseInt(absMatch[3], 10) : 0;
+    const ampm = absMatch[4]?.toLowerCase() || null;
+    const timezone = absMatch[5] || null;
 
     if (ampm === 'pm' && hour !== 12) hour += 12;
     if (ampm === 'am' && hour === 12) hour = 0;
 
     const ambiguous = !ampm && hour >= 1 && hour <= 12;
-    return { hour, minute, timezone, ambiguous };
+    return { hour, minute, timezone, ambiguous, weekday };
   }
 
   const relMatch = text.match(RELATIVE_TIME_REGEX);
@@ -66,12 +68,19 @@ function dateParts(tz, date) {
   return { y: get('year'), mo: get('month'), d: get('day') };
 }
 
-function nextOccurrence(h, mi, tz, now) {
-  const today = dateParts(tz, now);
-  let t = zonedWallToUtc(today.y, today.mo, today.d, h, mi, tz);
-  if (t > now.getTime()) return t;
-  const tomorrow = dateParts(tz, new Date(now.getTime() + 86_400_000));
-  return zonedWallToUtc(tomorrow.y, tomorrow.mo, tomorrow.d, h, mi, tz);
+function weekdayIn(tz, date) {
+  return WEEKDAYS.indexOf(new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(date).toLowerCase());
+}
+
+function nextOccurrence(h, mi, tz, now, weekday = null) {
+  for (let d = 0; d <= 7; d++) {
+    const day = new Date(now.getTime() + d * 86_400_000);
+    if (weekday != null && weekdayIn(tz, day) !== weekday) continue;
+    const parts = dateParts(tz, day);
+    const t = zonedWallToUtc(parts.y, parts.mo, parts.d, h, mi, tz);
+    if (t > now.getTime()) return t;
+  }
+  return now.getTime();
 }
 
 export function calculateWaitMs(parsed, marginSeconds = 60, fallbackHours = 5, now = new Date()) {
@@ -91,11 +100,11 @@ export function calculateWaitMs(parsed, marginSeconds = 60, fallbackHours = 5, n
 
   let target;
   if (parsed.ambiguous) {
-    const t1 = nextOccurrence(parsed.hour, parsed.minute, tz, now);
-    const t2 = nextOccurrence((parsed.hour + 12) % 24, parsed.minute, tz, now);
+    const t1 = nextOccurrence(parsed.hour, parsed.minute, tz, now, parsed.weekday);
+    const t2 = nextOccurrence((parsed.hour + 12) % 24, parsed.minute, tz, now, parsed.weekday);
     target = Math.min(t1, t2);
   } else {
-    target = nextOccurrence(parsed.hour, parsed.minute, tz, now);
+    target = nextOccurrence(parsed.hour, parsed.minute, tz, now, parsed.weekday);
   }
 
   const diff = Math.max(0, target - now.getTime());

@@ -1,7 +1,7 @@
 #!/bin/sh
-# Leak scan before anything leaves the machine. This repo is public and its test
-# fixtures are screenshots of real sessions, so the check runs on every push, not
-# just releases.
+# The suite and the leak scan before anything leaves the machine. Pushing main is
+# the release (installs track the default branch), this repo is public, and its
+# test fixtures are screenshots of real sessions, so both run on every push.
 #
 # Enable once per clone:  git config core.hooksPath .githooks
 # Bypass in an emergency: git push --no-verify
@@ -20,6 +20,12 @@ fi
 if ! command -v node >/dev/null 2>&1; then
   printf 'pre-push: node is not on PATH, so the leak scan did not run.\n' >&2
   printf 'Run `npm run scan` in a shell that has node, or push with --no-verify.\n' >&2
+  exit 1
+fi
+
+if ! out=$(npm test --silent 2>&1); then
+  printf '%s\n' "$out" | grep -E '^not ok|^# fail' >&2
+  printf '\npre-push: the suite is failing; refusing to push.\n' >&2
   exit 1
 fi
 

@@ -71,12 +71,6 @@ test('transient handling config validates', () => {
   assert.equal(loadConfig(withConfig({ stuckWorkingMinutes: 0 })).stuckWorkingMinutes, 5); // min 1
 });
 
-test('detectionTailLines defaults to 15 and rejects junk', () => {
-  assert.equal(loadConfig(join(tmpdir(), 'missing-tail.json')).detectionTailLines, 15);
-  assert.equal(loadConfig(withConfig({ detectionTailLines: 8 })).detectionTailLines, 8);
-  assert.equal(loadConfig(withConfig({ detectionTailLines: 0 })).detectionTailLines, 15); // min 1
-});
-
 test('engagedLabel defaults, overrides, and falls back when blank', () => {
   assert.equal(loadConfig(join(tmpdir(), 'missing-label.json')).engagedLabel, 'retry engaged');
   assert.equal(loadConfig(withConfig({ engagedLabel: 'auto-retry' })).engagedLabel, 'auto-retry');

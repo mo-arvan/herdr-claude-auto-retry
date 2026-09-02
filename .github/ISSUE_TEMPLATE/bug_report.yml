@@ -13,8 +13,8 @@ body:
     id: herdr-version
     attributes:
       label: herdr version
-      description: Output of `herdr --version`. This plugin needs herdr >= 0.7.0.
-      placeholder: "0.7.0"
+      description: Output of `herdr --version`. This plugin needs herdr >= 0.7.5.
+      placeholder: "0.7.5"
     validations:
       required: true
 

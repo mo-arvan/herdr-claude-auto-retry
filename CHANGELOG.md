@@ -2,6 +2,18 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- A rate-limit resume is never sent to a pane herdr still reports as working; the wait is re-checked until the pane stops. Previously a wait armed while the pane was idle could fire Escape into a turn you had resumed by hand hours later.
+- `stop` signals only monitors whose lock is live, so a process id reused after a reboot is left alone.
+- Log files are created readable by the owner only, and the quoted limit line is truncated.
+- Rate-limit detection reads Claude's newest output block plus the footer below it instead of a fixed 15-line tail, so text higher in the transcript (a fetched page, a log excerpt) can no longer arm a wait. `detectionTailLines` is removed from the config and ignored if present.
+- Fast-mode notices (`Fast limit reached`, `Fast mode overloaded`) and a monthly spend cap no longer start a wait: neither stops the session in a way a resume can fix.
+- Weekly and per-model limits that reset on a later day (`resets Wed 9am`) are parsed and waited out instead of falling back to a five-hour guess.
+- A sentence that merely says `try again in 5 minutes` no longer counts as a rate limit on its own.
+- Two more server-error forms are retried: `Unable to connect to API` and the high-load model-switch advisory. A server-error wait whose screen turns into a rate limit re-derives the reset deadline instead of nudging every 30 seconds.
+- Release tooling: `npm run coverage` enforces floors locally and in CI, a release refuses to cut unless the herdr CLI contract and Claude wording checks actually ran, and the pre-push hook runs the suite.
+
 ## [1.2.0] - 2026-08-31
 
 - The engaged label never appeared. `herdr pane report-metadata` dropped `--custom-status` and

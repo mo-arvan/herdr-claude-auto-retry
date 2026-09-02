@@ -52,7 +52,7 @@ Work through these in order; each has the command to check it.
 
 - Is a monitor running for that pane? The log shows a `started` line for each. If none is running, run `herdr plugin action invoke claude-auto-retry.watch-all`.
 - Is the pane stopped? The plugin sends only to `idle`, `blocked`, or `done` panes, never `working`. Read the state with `herdr pane get <pane-id>`. A `working` pane can still arm a wait, but only when the limit is the newest thing Claude printed; a limit sitting higher in a working pane's transcript will not fire.
-- Is the limit text in the footer? Detection scans only the last `detectionTailLines` lines (default 15). A limit that scrolled up is ignored. Inspect the footer with `herdr pane read <pane-id> --source detection --lines 25`.
+- Is the limit text still live? Detection reads Claude's newest output block plus the footer below it (status lines included); a limit higher in the transcript is scrollback and is ignored. Inspect what the plugin sees with `herdr pane read <pane-id> --source detection --lines 40`.
 - Does the wording still match? If the footer clearly shows a limit but nothing fires, Claude's phrasing may have changed. Add the new phrasing via config; see "The wording changed" below.
 - Is it the plugin's own pane? A pane whose working directory is the plugin's own directory is never monitored, because it inherently shows limit-like text.
 

@@ -1,6 +1,6 @@
 # herdr-claude-auto-retry
 
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node: >=18](https://img.shields.io/badge/node-%3E%3D18-339933.svg)](package.json) [![tests: 164 passing](https://img.shields.io/badge/tests-164%20passing-brightgreen.svg)](test/) [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node: >=18](https://img.shields.io/badge/node-%3E%3D18-339933.svg)](package.json) [![tests](https://github.com/mo-arvan/herdr-claude-auto-retry/actions/workflows/test.yml/badge.svg)](https://github.com/mo-arvan/herdr-claude-auto-retry/actions/workflows/test.yml) [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
 
 > Wait out Anthropic rate limits and auto-resume Claude Code, the herdr-native way: no tmux, no shell wrapper.
 
@@ -17,7 +17,7 @@ herdr plugin action invoke claude-auto-retry.watch-all   # attach to already-ope
 
 New Claude panes are picked up automatically. Every command runs through `launch.sh`, which finds node on `PATH` or in the usual version-manager dirs (fnm/nvm/mise/asdf/volta). Set `HERDR_NODE` to node's path if it cannot.
 
-A plain install tracks the default branch, so reinstalling picks up whatever has landed since. To stay on one version instead, pin the tag: `herdr plugin install mo-arvan/herdr-claude-auto-retry --ref v1.1.0`.
+A plain install tracks the default branch, so reinstalling picks up whatever has landed since. To stay on one version instead, pin a release tag: `herdr plugin install mo-arvan/herdr-claude-auto-retry --ref <tag>` (tags are listed on the [releases page](https://github.com/mo-arvan/herdr-claude-auto-retry/releases)).
 
 ## How it works
 
@@ -48,4 +48,4 @@ Configuration is optional; every key has a sensible default. See [docs/configura
 - Recovery types the configured message at the prompt. If Claude is in some other interactive state when the limit clears, the message may not resume it. Tune `retryMessage` and `eligibleStates` for your setup.
 - Supported on Linux and macOS. herdr's Windows support is beta.
 - Something not working? See [docs/troubleshooting.md](docs/troubleshooting.md).
-- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). License: [MIT](LICENSE).
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md). License: [MIT](LICENSE).

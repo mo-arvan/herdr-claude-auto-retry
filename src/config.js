@@ -17,7 +17,6 @@ export const DEFAULT_CONFIG = {
   customTransientPatterns: [],
   readSource: 'detection',
   readLines: 40,
-  detectionTailLines: 15,
   dismissMenu: true,
   verifyInput: true,
   menuDismissDelayMs: 300,
@@ -59,7 +58,6 @@ function validate(cfg) {
   if (typeof cfg.handleStuckWorking !== 'boolean') cfg.handleStuckWorking = DEFAULT_CONFIG.handleStuckWorking;
   cfg.stuckWorkingMinutes = validNumber(cfg.stuckWorkingMinutes, 1, DEFAULT_CONFIG.stuckWorkingMinutes);
   cfg.readLines = validNumber(cfg.readLines, 5, DEFAULT_CONFIG.readLines);
-  cfg.detectionTailLines = validNumber(cfg.detectionTailLines, 1, DEFAULT_CONFIG.detectionTailLines);
   cfg.menuDismissDelayMs = validNumber(cfg.menuDismissDelayMs, 0, DEFAULT_CONFIG.menuDismissDelayMs);
   cfg.submitDelayMs = validNumber(cfg.submitDelayMs, 0, DEFAULT_CONFIG.submitDelayMs);
 

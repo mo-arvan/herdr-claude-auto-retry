@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMonitorState, carriedState, processOneTick } from '../src/monitor-core.js';
+import { limitScreen } from './fixtures/screens.js';
 
 const CONFIG = {
   maxRetries: 5,
@@ -15,7 +16,7 @@ const CONFIG = {
 const TRANSIENT_TEXT = 'API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited';
 
 // Relative reset text keeps waitUntil timezone-independent.
-const LIMIT_TEXT = 'Please try again in 1 hour';
+const LIMIT_TEXT = "You've hit your session limit · resets in 1 hour";
 const NORMAL_TEXT = '> ready for input';
 
 function adapter({ text = NORMAL_TEXT, claude = true, present = true, eligible = true, blocked = false } = {}) {
@@ -96,7 +97,7 @@ async function poll(state, a, cfg, from, to) {
   return result;
 }
 
-// Real 7h-stall shape (D18): status lines push the error ~18 lines up, past detectionTailLines.
+// Real 7h-stall shape (D18): status lines push the error ~18 lines up, past any fixed tail window.
 const STALLED_SCREEN = [
   '⏺ Ran 1 shell command', '',
   STUCK_ERR, '',
@@ -126,7 +127,7 @@ test('takes over a working pane frozen on a transient error past the stuck thres
 });
 
 test('takes over a stall whose error sits outside the tail window', async () => {
-  const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5, detectionTailLines: 15 };
+  const cfg = { ...CONFIG, handleStuckWorking: true, stuckWorkingMinutes: 5 };
   const state = createMonitorState();
   const a = adapter({ text: STALLED_SCREEN, eligible: false });
   await poll(state, a, cfg, T0, T0 + 6 * MIN);
@@ -326,7 +327,8 @@ test('a reset wait ends when the banner clears, not when herdr says working', as
   const a = adapter({ text: LIMIT_TEXT, eligible: true });
   await processOneTick(state, a, CONFIG, 0); // -> waiting
   a._eligible = false;
-  assert.equal(await processOneTick(state, a, CONFIG, 3_600_001), 'retried', 'it resumes rather than abandoning the pane');
+  assert.equal(await processOneTick(state, a, CONFIG, 3_600_001), 'waiting', 'still working: requeued, not abandoned');
+  assert.equal(a.recovered, 0, 'never types into a pane herdr reports working');
   a._text = NORMAL_TEXT; // the banner is gone: that is the real signal
   assert.equal(await processOneTick(state, a, CONFIG, 3_700_000), 'user-continued');
 });
@@ -555,22 +557,6 @@ test('a successor inherits the backoff exponent but not the reset retry cap', as
 });
 
 // PR #2 (2026-08-12 incident, D28): a spinner held up during queued-message drain must not block detection.
-function limitScreen(counter) {
-  return [
-    '⏺ Bash(git push origin main)',
-    '  ⎿  main -> main',
-    '',
-    "⏺ You've hit your session limit · resets 8:50pm (Asia/Omsk)",
-    '',
-    `✻ Cooking… (${counter}m 14s · ↓ 8.1k tokens)`,
-    '─────────────────────────────────────────',
-    '❯',
-    '─────────────────────────────────────────',
-    `  proj git:(main) | Opus 5 (1M context) | ctx: ${counter}%`,
-    `  5h: 30% (resets in ${counter}m) | 7d: 29% (resets in 5d8h)`,
-    '  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)',
-  ].join('\n');
-}
 
 test('a working pane arms the wait when the limit stays the newest output for two polls', async () => {
   const state = createMonitorState();

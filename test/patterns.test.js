@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { limitInLatestBlock, stripAnsi, isRateLimited, findRateLimitMessage, classifyLimit, latestOutputBlock } from '../src/patterns.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
+import { limitScreen } from './fixtures/screens.js';
 
 test('stripAnsi removes CSI, OSC, and hyperlink sequences', () => {
   assert.equal(stripAnsi('\x1b[31mred\x1b[0m'), 'red');
@@ -49,7 +50,7 @@ test('a real blocked limit still fires (hit / reached wording)', () => {
 });
 
 test('customPatterns can force-detect a percentage form without a code change', () => {
-  assert.equal(classifyLimit("You've used 100% of your session limit · resets 1am", 0, ['used 100% of your']), 'reset');
+  assert.equal(classifyLimit("You've used 100% of your session limit · resets 1am", ['used 100% of your']), 'reset');
 });
 
 // Recovery dismisses any menu unconditionally with Escape, so no menu-specific detection is needed here.
@@ -83,8 +84,8 @@ test('custom patterns are honored', () => {
 });
 
 test('customPatterns catch new limit wording; customTransientPatterns catch new server-error wording', () => {
-  assert.equal(classifyLimit('New usage cap hit for this account', 0, ['usage cap hit']), 'reset');
-  assert.equal(classifyLimit('⏺ API Error: Service is busy, try later', 0, [], ['service is busy']), 'transient');
+  assert.equal(classifyLimit('New usage cap hit for this account', ['usage cap hit']), 'reset');
+  assert.equal(classifyLimit('⏺ API Error: Service is busy, try later', [], ['service is busy']), 'transient');
 });
 
 test('the default retry message never matches a detector (no self-trigger loop)', () => {
@@ -95,28 +96,22 @@ test('the default retry message never matches a detector (no self-trigger loop)'
   assert.equal(classifyLimit(`❯ ${m}`), null, 'nor with the real input glyph Claude renders');
 });
 
-test('tailLines ignores rate-limit text scrolled up in the transcript', () => {
+test('a limit above the newest output block is scrollback and does not match', () => {
   const buffer = [
-    "You've hit your session limit · resets 3pm (UTC)", // line 0, high in the buffer
-    ...Array(20).fill('normal conversation line'),
-    '> ', // live prompt at the bottom, no limit text
+    "You've hit your session limit · resets 3pm (UTC)",
+    '',
+    '⏺ Continuing with the refactor.',
+    '❯',
   ].join('\n');
-  assert.ok(isRateLimited(buffer), 'matches without a tail window'); // whole-buffer scan
-  assert.ok(!isRateLimited(buffer, [], 6), 'does NOT match within the last 6 lines');
+  assert.ok(!isRateLimited(buffer));
+  assert.equal(findRateLimitMessage(buffer), null);
 });
 
-test('tailLines still matches a real limit sitting at the footer', () => {
-  const buffer = [
-    ...Array(20).fill('earlier conversation'),
-    "You've hit your session limit · resets 3pm (UTC)", // just above the prompt
-    '> ',
-  ].join('\n');
-  assert.ok(isRateLimited(buffer, [], 6), 'matches when the limit is in the footer');
+test('a limit in the footer below the newest block still matches', () => {
+  const buffer = ['⏺ Ran the tests', '', "You've hit your session limit · resets 3pm (UTC)", '❯'].join('\n');
+  assert.ok(isRateLimited(buffer));
 });
 
-test('classifyLimit: subscription limit with reset -> reset', () => {
-  assert.equal(classifyLimit("You've hit your session limit · resets 3pm (UTC)"), 'reset');
-});
 
 test('classifyLimit: transient server throttle (no reset time) -> transient', () => {
   assert.equal(
@@ -180,15 +175,14 @@ test('a transient error still detects when a task list pushes it out of the tail
     'Opus 5 (1M context)  |  ctx 29%',
     '⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents',
   ].join('\n');
-  assert.equal(classifyLimit(footer, 15), 'transient', 'must detect despite the 15-line tail window');
+  assert.equal(classifyLimit(footer), 'transient', 'the newest block is always read, however far up it sits');
   // ...and it still stops once Claude actually responds below the error.
-  assert.equal(classifyLimit(`${footer}\n\n⏺ Continuing with T-109.`, 15), null);
+  assert.equal(classifyLimit(`${footer}\n\n⏺ Continuing with T-109.`), null);
 });
 
-test('classifyLimit respects the tail window', () => {
+test('marker-less transient text is read in full (no tail window)', () => {
   const buf = ['API Error: Server is temporarily limiting requests · Rate limited', ...Array(20).fill('x'), '> '].join('\n');
-  assert.equal(classifyLimit(buf), 'transient'); // whole buffer
-  assert.equal(classifyLimit(buf, 6), null); // footer only
+  assert.equal(classifyLimit(buf), 'transient');
 });
 
 test('classifyLimit: a transient error with a real response below it -> null (recovered)', () => {
@@ -231,7 +225,7 @@ test('a footer-form transient is detected even under ordinary output', () => {
     'API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited',
     '❯',
   ].join('\n');
-  assert.equal(classifyLimit(screen, 15), 'transient');
+  assert.equal(classifyLimit(screen), 'transient');
 });
 
 test('the footer read does not revive a stale error above a fresh response', () => {
@@ -239,7 +233,7 @@ test('the footer read does not revive a stale error above a fresh response', () 
     '⏺ API Error: Connection closed mid-response. The response above may be incomplete.', '',
     '⏺ Continuing with the refactor now.', '  ⎿ Edited 3 files', '❯',
   ].join('\n');
-  assert.equal(classifyLimit(recovered, 15), null);
+  assert.equal(classifyLimit(recovered), null);
 });
 
 // The prompt box is user-typed text; pulling it into detection risks Enter submitting a half-written draft (D23).
@@ -251,30 +245,14 @@ test('a half-written user prompt is never treated as an error', () => {
     '─'.repeat(50),
     'Opus 5 (1M context)  |  ctx 22%',
   ].join('\n');
-  assert.equal(classifyLimit(drafting, 15), null);
-  assert.equal(findRateLimitMessage(drafting, 15), null);
+  assert.equal(classifyLimit(drafting), null);
+  assert.equal(findRateLimitMessage(drafting), null);
 });
 
 // PR #2: on a working pane, the limit is the last thing Claude printed; everything below is chrome.
-function limitScreen(counter) {
-  return [
-    '⏺ Bash(git push origin main)',
-    '  ⎿  main -> main',
-    '',
-    "⏺ You've hit your session limit · resets 8:50pm (Asia/Omsk)",
-    '',
-    `✻ Cooking… (${counter}m 14s · ↓ 8.1k tokens)`,
-    '─────────────────────────────────────────',
-    '❯',
-    '─────────────────────────────────────────',
-    `  proj git:(main) | Opus 5 (1M context) | ctx: ${counter}%`,
-    `  5h: 30% (resets in ${counter}m) | 7d: 29% (resets in 5d8h)`,
-    '  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)',
-  ].join('\n');
-}
 
 test('limitInLatestBlock: true when the limit is the newest output', () => {
-  assert.equal(limitInLatestBlock(limitScreen(2), 30), true);
+  assert.equal(limitInLatestBlock(limitScreen(2)), true);
 });
 
 test('limitInLatestBlock: false when the limit only sits in the scrollback', () => {
@@ -283,13 +261,12 @@ test('limitInLatestBlock: false when the limit only sits in the scrollback', () 
     '',
     '⏺ Done - pushed the fix.',
   ].join('\n');
-  // The whole-tail check still matches; that's why the narrower block check gates an ineligible pane instead.
-  assert.equal(classifyLimit(resumed), 'reset');
-  assert.equal(limitInLatestBlock(resumed, 30), false);
+  assert.equal(classifyLimit(resumed), null);
+  assert.equal(limitInLatestBlock(resumed), false);
 });
 
 test('limitInLatestBlock: false when nothing was printed as output at all', () => {
-  assert.equal(limitInLatestBlock('❯ please try again in 1 hour', 30), false);
+  assert.equal(limitInLatestBlock('❯ please try again in 1 hour'), false);
 });
 
 // Live incident 2026-08-13: a markdown table row armed a 7h wait; text ABOUT a limit is not a limit.
@@ -297,7 +274,7 @@ test('a rendered table row about a limit is not a rate limit', () => {
   const row = '│             │ session limit · resets 8:50pm)                                    │            │';
   assert.equal(isRateLimited(row), false);
   assert.equal(classifyLimit(row), null);
-  assert.equal(limitInLatestBlock(`⏺ Итог разбора:\n${row}`, 30), false);
+  assert.equal(limitInLatestBlock(`⏺ Итог разбора:\n${row}`), false);
 });
 
 test('an ASCII markdown table about limits and server errors is inert', () => {

@@ -5,7 +5,7 @@ import { parseResetTime, calculateWaitMs } from '../src/time-parser.js';
 const HOUR = 3_600_000;
 
 test('parses absolute time with timezone', () => {
-  assert.deepEqual(parseResetTime('resets 3pm (UTC)'), { hour: 15, minute: 0, timezone: 'UTC', ambiguous: false });
+  assert.deepEqual(parseResetTime('resets 3pm (UTC)'), { hour: 15, minute: 0, timezone: 'UTC', ambiguous: false, weekday: null });
 });
 
 test('parses minutes and named timezone (#19 example)', () => {
@@ -14,6 +14,7 @@ test('parses minutes and named timezone (#19 example)', () => {
     minute: 50,
     timezone: 'Europe/London',
     ambiguous: false,
+    weekday: null,
   });
 });
 
@@ -76,4 +77,15 @@ test('unparseable reset falls back to fallbackHours', () => {
 test('garbled timezone falls back instead of throwing', () => {
   const ms = calculateWaitMs({ hour: 15, minute: 0, timezone: 'Not/AZone', ambiguous: false }, 60, 5);
   assert.equal(ms, (5 * 3600 + 60) * 1000);
+});
+
+// A reset more than a day out renders with a weekday ("resets Wed 9am"): wait for the
+// next such weekday, a week away when it is today and already past.
+test('a weekday reset waits for the next matching day', () => {
+  const parsed = parseResetTime("You've hit your Opus limit · resets Wed 9am (UTC)");
+  assert.equal(parsed.weekday, 3);
+  const monday = new Date('2026-08-31T12:00:00Z');
+  assert.equal(calculateWaitMs(parsed, 0, 5, monday), 45 * 3_600_000, 'Monday noon -> Wednesday 9am');
+  const wedLater = new Date('2026-09-02T10:00:00Z');
+  assert.equal(calculateWaitMs(parsed, 0, 5, wedLater), (7 * 24 - 1) * 3_600_000, 'Wednesday 10am -> next Wednesday 9am');
 });

@@ -11,7 +11,7 @@ import { createMonitorState, carriedState, processOneTick } from '../src/monitor
 import { recover } from '../src/recovery.js';
 import { stateDir } from '../src/paths.js';
 import {
-  claimSlot, touchRecord, removeRecord, readRecord, listRecords, isFresh, isAlive, hasActiveMonitor, lockHeldByOther,
+  claimSlot, touchRecord, removeRecord, readRecord, listRecords, isFresh, hasActiveMonitor, lockHeldByOther,
 } from '../src/registry.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -44,12 +44,7 @@ function spawnMonitor(pane) {
   return 'spawned';
 }
 
-function age(ms) {
-  const s = Math.round((Date.now() - ms) / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.round(s / 60)}m`;
-  return `${Math.round(s / 3600)}h`;
-}
+const age = (ms) => humanDur(Date.now() - ms);
 
 function paneHandle(pane) {
   const suffix = String(pane.pane_id).split(':').pop() || pane.pane_id;
@@ -174,7 +169,7 @@ function stop() {
   const records = listRecords();
   let stopped = 0;
   for (const r of records) {
-    if (isAlive(r.pid)) {
+    if (isFresh(r)) {
       try {
         process.kill(r.pid, 'SIGTERM');
         stopped++;
@@ -303,7 +298,7 @@ async function monitor() {
         const label = isTransient ? 'server error' : 'rate limit';
         const verb = isTransient ? 'retry in' : 'waiting';
         const stuck = state.lastStuck ? ' [stuck; herdr reported working]' : '';
-        logger.info(`${label}${stuck}: "${state.lastRateLimitMessage}" -> ${verb} ${humanDur(state.waitUntil - Date.now())}`);
+        logger.info(`${label}${stuck}: "${state.lastRateLimitMessage.slice(0, 120)}" -> ${verb} ${humanDur(state.waitUntil - Date.now())}`);
         state.lastRateLimitMessage = null;
       }
       if (result === 'retried') {

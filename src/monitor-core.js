@@ -8,7 +8,7 @@ export function createMonitorState(carried) {
     status: 'monitoring', waitUntil: 0, attempts: 0,
     lastRateLimitMessage: null, lastKind: null, lastStuck: false,
     nudges: 0, frozenMs: 0, stuckSig: null, lastTickAt: 0,
-    armSig: null, armedWorking: false,
+    armSig: null,
   };
   if (!carried || typeof carried !== 'object') return state;
   if (Number.isFinite(carried.nudges) && carried.nudges >= 0) state.nudges = Math.floor(carried.nudges);
@@ -42,13 +42,12 @@ function transientBackoffMs(attempts, config) {
   return Math.min(base * 2 ** attempts, cap);
 }
 
-function stuckWorkingEligible(state, stripped, tail, config, now, watching) {
+function stuckWorkingEligible(state, stripped, screenKind, config, now, watching) {
   const step = Math.max(1, config.pollIntervalSeconds || 5) * 2000;
   const elapsed = state.lastTickAt > 0 ? Math.min(Math.max(0, now - state.lastTickAt), step) : 0;
   state.lastTickAt = now;
 
-  if (!watching || config.handleStuckWorking === false
-      || classifyLimit(stripped, tail, config.customPatterns, config.customTransientPatterns) !== 'transient') {
+  if (!watching || config.handleStuckWorking === false || screenKind !== 'transient') {
     clearStuck(state);
     return false;
   }
@@ -78,23 +77,22 @@ export async function processOneTick(state, adapter, config, now = Date.now()) {
   const text = await adapter.read();
   const stripped = text == null ? null : stripAnsi(text);
   const readable = stripped != null && stripped.trim() !== '';
-  const tail = config.detectionTailLines || 0;
-  const stuck = readable && !blocked && stuckWorkingEligible(state, stripped, tail, config, now, !stoppedEligible);
+  const screenKind = readable ? classifyLimit(stripped, config.customPatterns, config.customTransientPatterns) : null;
+  const stuck = readable && !blocked && stuckWorkingEligible(state, stripped, screenKind, config, now, !stoppedEligible);
   const viaStuck = !stoppedEligible && stuck;
   const inStuckEpisode = !stoppedEligible && state.status === 'waiting' && state.lastStuck;
-  const screenKind = readable ? classifyLimit(stripped, tail, config.customPatterns, config.customTransientPatterns) : null;
   const actionable = screenKind === 'reset' || (screenKind === 'transient' && config.handleTransient !== false && !blocked);
   const armCandidate = state.status !== 'waiting' && !stoppedEligible && screenKind === 'reset'
-    && limitInLatestBlock(stripped, tail, config.customPatterns);
+    && limitInLatestBlock(stripped, config.customPatterns);
   const armSig = armCandidate ? createHash('sha1').update(latestOutputBlock(stripped) || '').digest('hex') : null;
   const armReset = armCandidate && state.armSig != null && state.armSig === armSig;
   state.armSig = armSig;
-  if (stoppedEligible) state.armedWorking = false;
   const eligible = stoppedEligible || viaStuck || armReset || (state.status === 'waiting' && state.lastKind === 'reset' && screenKind === 'reset');
   const kind = eligible || inStuckEpisode ? screenKind : null;
   const limited = eligible && actionable;
 
-  if (state.status === 'waiting') {
+  const kindSwitch = state.status === 'waiting' && state.lastKind === 'transient' && screenKind === 'reset' && limited;
+  if (state.status === 'waiting' && !kindSwitch) {
     if (!readable) return 'waiting';
 
     if (blocked && screenKind !== null) return 'waiting';
@@ -104,20 +102,19 @@ export async function processOneTick(state, adapter, config, now = Date.now()) {
       state.attempts = 0;
       state.nudges = 0;
       state.lastStuck = false;
-      state.armedWorking = false;
       clearStuck(state);
       return 'user-continued';
     }
 
     if (!(await adapter.isClaude())) {
-      state.waitUntil = now + config.pollIntervalSeconds * 1000 * 6;
+      state.waitUntil = now + (config.pollIntervalSeconds || 5) * 1000 * 6;
       return 'skipped-not-claude';
     }
 
     if (!limited) return 'waiting';
 
-    if (screenKind === 'reset' && state.armedWorking && !stoppedEligible) {
-      state.waitUntil = now + config.pollIntervalSeconds * 1000 * 6;
+    if (screenKind === 'reset' && !stoppedEligible) {
+      state.waitUntil = now + (config.pollIntervalSeconds || 5) * 1000 * 6;
       return 'waiting';
     }
 
@@ -131,7 +128,7 @@ export async function processOneTick(state, adapter, config, now = Date.now()) {
     }
 
     if (state.attempts >= config.maxRetries) {
-      state.waitUntil = now + config.pollIntervalSeconds * 1000 * 12;
+      state.waitUntil = now + (config.pollIntervalSeconds || 5) * 1000 * 12;
       return 'max-retries';
     }
     state.attempts++;
@@ -142,11 +139,10 @@ export async function processOneTick(state, adapter, config, now = Date.now()) {
   }
 
   if (limited) {
-    const message = findRateLimitMessage(stripped, tail);
+    const message = findRateLimitMessage(stripped);
     state.lastRateLimitMessage = message;
     state.lastKind = kind;
     state.lastStuck = viaStuck;
-    state.armedWorking = armReset;
     if (kind === 'transient') {
       state.waitUntil = now + (config.transientWaitSeconds || 60) * 1000;
     } else {

@@ -4,6 +4,8 @@ Configuration is optional. Create `claude-auto-retry.json` in herdr's config dir
 
 Running monitors re-read this file every poll, so edits take effect on their own within a few seconds. No restart is needed.
 
+The plugin attaches to every Claude pane herdr reports (except panes whose cwd is under `HERDR_PLUGIN_ROOT`) and reads the last `readLines` lines of each on every poll. That text is held only for the check; the one thing persisted from it is the matched limit line, truncated, in the log.
+
 ## Options
 
 | Key | Default | Meaning |
@@ -22,7 +24,6 @@ Running monitors re-read this file every poll, so edits take effect on their own
 | `customTransientPatterns` | `[]` | Extra regexes treated as a transient server error (short backoff). See below. |
 | `readSource` | `"detection"` | herdr read source: `recent`, `recent-unwrapped`, `visible`, or `detection`. |
 | `readLines` | `40` | Lines read per check. |
-| `detectionTailLines` | `15` | Tail window for rate-limit detection. Transient server errors are not bound by it: they anchor to the latest on-screen output block, so a long task list cannot push the error out of view. |
 | `dismissMenu` | `true` | Send Escape before resuming, but only when the pane is blocked at a prompt (dismisses the `/rate-limit-options` menu). Never sent to an idle or working pane, where it would interrupt the turn. |
 | `menuDismissDelayMs` | `300` | Pause after Escape. |
 | `verifyInput` | `true` | On recoveries that sent Escape, read back the `❯` input line before Enter and retype the message once if its first character was eaten (Claude Code's vim editor mode runs it as a command). |
@@ -43,6 +44,8 @@ rows = [["state_icon", "workspace", "tab"], ["agent", "$retry"]]
 The token carries a TTL, so it disappears on its own if a monitor dies.
 
 ## Adjusting detection when Claude's wording changes
+
+These patterns run against live screen text on every poll, so keep them simple: a regex with nested quantifiers can hang a monitor on hostile screen content.
 
 Claude Code's on-screen wording is not a stable API. It will change, and a phrasing the plugin looks for can stop matching, so detection quietly stops firing. You do not need to edit code or wait for a release to fix that. Add the new phrasing to one of two config lists, each an array of case-insensitive regular-expression strings:
 

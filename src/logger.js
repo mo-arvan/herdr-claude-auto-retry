@@ -39,13 +39,13 @@ export function createLogger(dir = logsDir(), { tag = '' } = {}) {
   function log(level, message) {
     try {
       if (!dirCreated) {
-        mkdirSync(dir, { recursive: true });
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
         dirCreated = true;
       }
       const handle = typeof tag === 'function' ? tag() : tag;
       const lvl = level === 'INFO' ? '' : `${level} `;
       const tagged = handle ? `${handle}  ` : '';
-      appendFileSync(todayFile(dir), `[${timeOnly()}] ${lvl}${tagged}${message}\n`);
+      appendFileSync(todayFile(dir), `[${timeOnly()}] ${lvl}${tagged}${message}\n`, { mode: 0o600 });
       cleanup(dir);
     } catch {
     }

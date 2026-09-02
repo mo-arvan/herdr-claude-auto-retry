@@ -53,15 +53,11 @@ export function claimSlot(rec) {
   return false;
 }
 
-function writeRecord(rec) {
-  mkdirSync(monitorsDir(), { recursive: true });
-  writeFileSync(lockPath(rec.terminalId), JSON.stringify(rec, null, 2));
-}
-
 export function touchRecord(terminalId, patch = {}, ownerPid = process.pid) {
   const rec = readRecord(terminalId);
   if (!rec || rec.pid !== ownerPid) return;
-  writeRecord({ ...rec, ...patch, updatedAtMs: Date.now() });
+  mkdirSync(monitorsDir(), { recursive: true });
+  writeFileSync(lockPath(terminalId), JSON.stringify({ ...rec, ...patch, updatedAtMs: Date.now() }, null, 2));
 }
 
 export function removeRecord(terminalId) {

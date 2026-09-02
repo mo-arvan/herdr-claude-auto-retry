@@ -48,6 +48,7 @@ function setup() {
   };
   const setState = (s) => writeFileSync(statePath, JSON.stringify(s));
   const sends = () => readFileSync(sendsPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const screen = () => JSON.parse(readFileSync(statePath, 'utf8')).screen;
   const locks = () => {
     try {
       return readdirSync(join(stateDir, 'monitors'));
@@ -55,7 +56,7 @@ function setup() {
       return [];
     }
   };
-  return { procEnv, setState, sends, locks };
+  return { procEnv, setState, sends, screen, locks };
 }
 
 test('monitor: detect -> engage label -> recover (text/enter, no esc) -> clear on resume -> lock cleaned', async () => {
@@ -245,6 +246,45 @@ test('a single failed pane list does not delete the monitor or its carried state
 
     assert.ok(t.locks().includes('t1.json'), 'the record must survive a transient empty pane list');
     assert.equal(readLock(t, 't1.json').state.stuckSig, before.state.stuckSig, 'and keep its carried state');
+  } finally {
+    proc.kill('SIGTERM');
+  }
+});
+
+// Reactive-screen scenarios: the real entrypoint against the TUI model in fake-herdr.
+const LIMIT_BANNER = "⏺ You've hit your session limit · resets in 0m"; // a deadline that is already due
+const PANE = { pane_id: 'w1:p1', terminal_id: 't1', agent: 'claude', agent_status: 'idle', cwd: '/x/proj' };
+
+test('vim mode: the eaten first character is read back and repaired before submit (D30)', async () => {
+  const t = setup();
+  t.setState({
+    panes: [PANE],
+    screen: { status: 'idle', vim: true, mode: 'insert', input: '', submitted: [], transcript: ['⏺ Bash(npm test)', '  ⎿  ok', '', LIMIT_BANNER] },
+  });
+  const proc = spawn(process.execPath, [MAIN, 'monitor', 't1', 'w1:p1'], { env: t.procEnv, stdio: 'ignore' });
+  try {
+    const submitted = await waitFor(() => (t.screen().submitted.length ? t.screen().submitted : null), 20000);
+    assert.deepEqual(submitted, ['Continue where you left off.'], 'Claude receives the message intact');
+    const s = t.sends();
+    assert.ok(s.some((c) => c[0] === 'send-keys' && c.includes('esc')), 'a reset recovery sends Escape');
+    assert.ok(s.some((c) => c[0] === 'send-keys' && c.includes('ctrl+u')), 'the mangled line was cleared');
+    assert.equal(s.filter((c) => c[0] === 'send-text').length, 2, 'typed once, then retyped once');
+  } finally {
+    proc.kill('SIGTERM');
+  }
+});
+
+test('a limit on a working pane arms the wait but is not sent until the pane stops (D28, D31)', async () => {
+  const t = setup();
+  const screen = { status: 'working', vim: false, mode: 'insert', input: '', submitted: [], transcript: ['⏺ Bash(npm test)', '  ⎿  ok', '', LIMIT_BANNER] };
+  t.setState({ panes: [PANE], screen });
+  const proc = spawn(process.execPath, [MAIN, 'monitor', 't1', 'w1:p1'], { env: t.procEnv, stdio: 'ignore' });
+  try {
+    await sleep(4500);
+    assert.ok(!t.sends().some((c) => c[0] === 'send-text'), 'nothing is typed while herdr reports working');
+    t.setState({ panes: [PANE], screen: { ...screen, status: 'idle' } });
+    const submitted = await waitFor(() => (t.screen().submitted.length ? t.screen().submitted : null), 25000);
+    assert.deepEqual(submitted, ['Continue where you left off.'], 'sent once the pane stopped');
   } finally {
     proc.kill('SIGTERM');
   }

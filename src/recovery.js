@@ -44,8 +44,12 @@ export function classifyTypedInput(screen, message) {
 
 async function inspectInput(herdr, paneId, config) {
   if (typeof herdr.paneRead !== 'function') return 'unknown';
-  const screen = await herdr.paneRead(paneId, { source: 'visible', lines: VERIFY_READ_LINES, timeoutMs: 1500 });
-  return classifyTypedInput(screen, config.retryMessage);
+  try {
+    const screen = await herdr.paneRead(paneId, { source: 'visible', lines: VERIFY_READ_LINES, timeoutMs: 1500 });
+    return classifyTypedInput(screen, config.retryMessage);
+  } catch {
+    return 'unknown';
+  }
 }
 
 export async function recover(herdr, paneId, config, { blocked = false, log = null } = {}) {

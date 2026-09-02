@@ -21,13 +21,13 @@ const LIMIT_PATTERNS = [
   /usage limit/i,
   /out of.*usage/i,
   /rate limit/i,
-  /try again in/i,
 ];
 
 const USAGE_WARNING = /\b\d{1,3}%\s+of your\b/i;
+const NOT_A_STOP = /\bfast[- ](?:mode|limit)\b|\bspend limit\b/i;
 
 const RESET_PATTERNS = [
-  /resets?\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?/i,
+  /resets?\s+(?:at\s+)?(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?/i,
   /resets?\s+in[:\s]\s*\d/i,
   /try again in \d+\s*(?:hours?|minutes?|h|m)/i,
 ];
@@ -40,6 +40,8 @@ const TRANSIENT_PATTERNS = [
   /internal server error/i,
   /server[-\s]side issue/i,
   /api error:?\s*connection\b/i,
+  /unable to connect to api/i,
+  /experiencing high load/i,
 ];
 
 const WINDOW = 6;
@@ -81,10 +83,19 @@ export function agentErrorBlock(text) {
   return TRANSIENT_PATTERNS.some((p) => p.test(first)) ? block : null;
 }
 
+function toLines(text) {
+  return Array.isArray(text) ? text : stripAnsi(text).split('\n');
+}
+
 export function latestOutputBlock(text) {
-  const lines = Array.isArray(text) ? text : stripAnsi(text).split('\n');
+  const lines = toLines(text);
   const bounds = outputBlockBounds(lines);
   return bounds ? lines.slice(bounds.start, bounds.end + 1).join('\n') : null;
+}
+
+function detectionRegion(lines) {
+  const bounds = outputBlockBounds(lines);
+  return lines.slice(bounds ? bounds.start : 0).filter((l) => !PROMPT_LINE.test(l));
 }
 
 function compile(customPatterns) {
@@ -111,93 +122,59 @@ function hasNearbyMatch(lines, idx, patterns) {
   return false;
 }
 
-export function isRateLimited(text, customPatterns = [], tailLines = 0) {
-  let lines = stripAnsi(text).split('\n');
-  if (tailLines > 0) lines = lines.slice(-tailLines);
-
+function limitedIn(lines, customPatterns) {
   const custom = compile(customPatterns);
-  if (custom.length > 0) {
-    const full = lines.join('\n');
-    if (custom.some((p) => p.test(full))) return true;
-  }
-
+  if (custom.length > 0 && custom.some((p) => p.test(lines.join('\n')))) return true;
   for (let i = 0; i < lines.length; i++) {
-    if (USAGE_WARNING.test(lines[i])) continue;
+    if (USAGE_WARNING.test(lines[i]) || NOT_A_STOP.test(lines[i])) continue;
     if (isTableRow(lines[i])) continue;
-    if (LIMIT_PATTERNS.some((p) => p.test(lines[i]))) {
-      if (hasNearbyMatch(lines, i, RESET_PATTERNS)) return true;
-    }
+    if (LIMIT_PATTERNS.some((p) => p.test(lines[i])) && hasNearbyMatch(lines, i, RESET_PATTERNS)) return true;
   }
-
   return false;
 }
 
-export function limitInLatestBlock(text, tailLines = 0, customPatterns = []) {
-  let lines = stripAnsi(text).split('\n');
-  if (tailLines > 0) lines = lines.slice(-tailLines);
-  const block = latestOutputBlock(lines);
-  if (block == null) return false;
-  return isRateLimited(block, customPatterns, 0);
+export function isRateLimited(text, customPatterns = []) {
+  return limitedIn(detectionRegion(toLines(text)), customPatterns);
 }
 
-export function classifyLimit(text, tailLines = 0, customPatterns = [], customTransientPatterns = []) {
-  if (isRateLimited(text, customPatterns, tailLines)) return 'reset';
-  const all = stripAnsi(text).split('\n');
-  const bounds = outputBlockBounds(all);
-  const block = bounds ? all.slice(bounds.start, bounds.end + 1).filter((l) => !isTableRow(l)).join('\n') : null;
-  const below = bounds ? bounds.end + 1 : Math.max(0, all.length - (tailLines || all.length));
-  const footer = all.slice(below).filter((l) => !PROMPT_LINE.test(l) && !isTableRow(l));
-  const blob = [block, footer.join('\n')].filter((part) => part).join('\n');
+export function limitInLatestBlock(text, customPatterns = []) {
+  const lines = toLines(text);
+  const bounds = outputBlockBounds(lines);
+  return bounds != null && limitedIn(lines.slice(bounds.start, bounds.end + 1), customPatterns);
+}
+
+export function classifyLimit(text, customPatterns = [], customTransientPatterns = []) {
+  const region = detectionRegion(toLines(text));
+  if (limitedIn(region, customPatterns)) return 'reset';
+  const blob = region.filter((l) => !isTableRow(l) && !NOT_A_STOP.test(l)).join('\n');
   const transient = TRANSIENT_PATTERNS.concat(compile(customTransientPatterns));
-  if (transient.some((p) => p.test(blob))) return 'transient';
-  return null;
+  return transient.some((p) => p.test(blob)) ? 'transient' : null;
 }
 
-export function findRateLimitMessage(text, tailLines = 0) {
-  const all = stripAnsi(text).split('\n');
-  let lines = tailLines > 0 ? all.slice(-tailLines) : all;
-  lines = lines.filter((l) => !PROMPT_LINE.test(l));
+export function findRateLimitMessage(text) {
+  const lines = detectionRegion(toLines(text));
 
   let limitIdx = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (USAGE_WARNING.test(lines[i])) continue;
-    if (isTableRow(lines[i])) continue;
-    if (LIMIT_PATTERNS.some((p) => p.test(lines[i]))) {
-      limitIdx = i;
-      break;
-    }
+  let lastTransient = -1;
+  const resets = [];
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (isTableRow(ln)) continue;
+    if (RESET_PATTERNS.some((p) => p.test(ln))) resets.push(i);
+    if (TRANSIENT_PATTERNS.some((p) => p.test(ln))) lastTransient = i;
+    if (!USAGE_WARNING.test(ln) && !NOT_A_STOP.test(ln) && LIMIT_PATTERNS.some((p) => p.test(ln))) limitIdx = i;
   }
 
   if (limitIdx >= 0) {
-    const start = Math.max(0, limitIdx - WINDOW);
-    const end = Math.min(lines.length, limitIdx + WINDOW + 1);
     let best = -1;
-    for (let j = start; j < end; j++) {
-      if (isTableRow(lines[j])) continue;
-      if (RESET_PATTERNS.some((p) => p.test(lines[j]))) {
-        if (best === -1 || Math.abs(j - limitIdx) < Math.abs(best - limitIdx)) best = j;
-      }
+    for (const j of resets) {
+      if (Math.abs(j - limitIdx) > WINDOW) continue;
+      if (best === -1 || Math.abs(j - limitIdx) < Math.abs(best - limitIdx)) best = j;
     }
     if (best >= 0) return lines[best].trim();
   }
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (isTableRow(lines[i])) continue;
-    if (RESET_PATTERNS.some((p) => p.test(lines[i]))) return lines[i].trim();
-  }
+  if (resets.length > 0) return lines[resets[resets.length - 1]].trim();
   if (limitIdx >= 0) return lines[limitIdx].trim();
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (isTableRow(lines[i])) continue;
-    if (TRANSIENT_PATTERNS.some((p) => p.test(lines[i]))) return lines[i].trim();
-  }
-
-  const block = latestOutputBlock(all);
-  if (block != null) {
-    for (const line of block.split('\n')) {
-      if (isTableRow(line)) continue;
-      if (TRANSIENT_PATTERNS.some((p) => p.test(line))) return line.trim();
-    }
-  }
-
+  if (lastTransient >= 0) return lines[lastTransient].trim();
   return null;
 }

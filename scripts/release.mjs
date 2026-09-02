@@ -2,13 +2,11 @@
 // human action because the push is the release. See CONTRIBUTING.md.
 //
 //   node scripts/release.mjs --check     readiness report
-//   node scripts/release.mjs 1.1.0       bump, promote, sync, commit, tag
+//   node scripts/release.mjs X.Y.Z       bump, promote, commit, tag
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { promote } from './changelog.mjs';
-
-const DOC_FILES = ['README.md', 'CONTRIBUTING.md', 'AGENTS.md'];
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 const read = (f) => readFileSync(f, 'utf8');
@@ -19,52 +17,27 @@ const fail = (m) => {
 };
 const failures = [];
 
-// Returns the passing count, or null after printing the failing test names.
-function testCount() {
+// The suite under coverage floors, with nothing skipped: the herdr CLI contract and
+// Claude wording tests skip when those binaries are missing, and a release cut
+// without them is exactly the failure they exist to catch.
+function suitePasses() {
   let out;
   try {
-    out = execFileSync('npm', ['test'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    out = execFileSync('npm', ['run', 'coverage'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (err) {
     out = `${err.stdout || ''}`;
     for (const [, name] of out.matchAll(/^not ok \d+ - (.+)$/gm)) process.stdout.write(`        ${name}\n`);
+    for (const [, msg] of out.matchAll(/^# Error: (.+)$/gm)) process.stdout.write(`        ${msg}\n`);
     const failed = out.match(/^# fail (\d+)$/m);
-    fail(failed ? `${failed[1]} test(s) failing` : 'npm test did not complete');
-    return null;
+    fail(failed && failed[1] !== '0' ? `${failed[1]} test(s) failing` : 'the suite or its coverage floors did not pass');
+    return false;
   }
-  const tests = out.match(/^# tests (\d+)$/m);
-  if (!tests) {
-    fail('could not parse the test summary');
-    return null;
+  const skipped = Number((out.match(/^# skipped (\d+)$/m) || [])[1] || 0);
+  if (skipped > 0) {
+    fail(`${skipped} test(s) skipped: the herdr and Claude contract tests must run for a release (are herdr and claude on PATH?)`);
+    return false;
   }
-  return Number(tests[1]);
-}
-
-function currentVersions() {
-  return {
-    pkg: JSON.parse(read('package.json')).version,
-    manifest: read('herdr-plugin.toml').match(/^version = "(.+)"$/m)[1],
-  };
-}
-
-// Quoted in three docs and has drifted before, so derive it.
-function syncDocs(count, { write }) {
-  const stale = [];
-  const unmatched = [];
-  for (const file of DOC_FILES) {
-    const before = read(file);
-    if (!new RegExp(`\\b${count}\\b`).test(before) && !/tests-\d+%20passing|- `npm test` - \d+ tests|npm test\s+# \d+ tests/.test(before)) {
-      unmatched.push(file);
-    }
-    const after = before
-      .replace(/(\[!\[tests: )\d+( passing\]\(https:\/\/img\.shields\.io\/badge\/tests-)\d+(%20passing)/, `$1${count}$2${count}$3`)
-      .replace(/^(- `npm test` - )\d+( tests)/m, `$1${count}$2`)
-      .replace(/^(npm test\s+# )\d+( tests)/m, `$1${count}$2`);
-    if (after === before) continue;
-    if (write) writeFileSync(file, after);
-    stale.push(file);
-  }
-  for (const f of unmatched) fail(`${f}: the test-count pattern matched nothing, so the count cannot be kept honest`);
-  return stale;
+  return true;
 }
 
 function checkGit(releasing) {
@@ -92,10 +65,6 @@ function preflight(target) {
   process.stdout.write('Release preflight\n');
   checkGit(target !== null);
 
-  const { pkg, manifest } = currentVersions();
-  if (pkg === manifest) ok(`version ${pkg} consistent across package.json and the manifest`);
-  else fail(`package.json says ${pkg}, herdr-plugin.toml says ${manifest}`);
-
   if (target) {
     if (/^\d+\.\d+\.\d+$/.test(target)) ok(`target version ${target} is well formed`);
     else fail(`target version "${target}" is not X.Y.Z`);
@@ -104,19 +73,17 @@ function preflight(target) {
     else ok(`tag v${target} is free`);
   }
 
+  let signing = '';
+  try { signing = git('config', '--get', 'tag.gpgsign'); } catch {}
+  if (signing === 'true') ok('release tags are signed');
+  else process.stdout.write('  note  tags are unsigned; `git config tag.gpgsign true` with a signing key set to sign releases\n');
+
   const changelog = read('CHANGELOG.md');
   if (/^## \[Unreleased\]/m.test(changelog)) ok('CHANGELOG has an [Unreleased] section');
   else fail('CHANGELOG has no [Unreleased] section; nothing to release');
 
-  const count = testCount();
-  if (count === null) return { count: null };
-  ok(`${count} tests passing`);
-  const stale = syncDocs(count, { write: false });
-  if (stale.length === 0) ok('documented test count matches the suite');
-  else process.stdout.write(`  note  test count stale in ${stale.join(', ')} (the release will fix it)\n`);
-
+  if (suitePasses()) ok('suite passing under coverage floors, nothing skipped');
   reviewGate();
-  return { count };
 }
 
 // The suite covers the mechanical half. This is the half that needs eyes, so it
@@ -139,6 +106,7 @@ function reviewGate() {
     '  3. Verboseness: did a doc grow more than the change deserves? Cut it back.',
     '  4. CHANGELOG: written for users, in their terms, no internals.',
     '  5. Fixtures: real pane captures scrubbed of anything private.',
+    '  6. Review: an adversarial pass over the unreleased diff (correctness, least privilege, minimal code) done, findings fixed or recorded in docs/decisions.md.',
     '',
   ].join('\n'));
 }
@@ -151,7 +119,7 @@ if (!arg || arg === '--check') {
 }
 
 const version = arg;
-const { count } = preflight(version);
+preflight(version);
 if (failures.length) {
   process.stdout.write(`\nAborted: ${failures.length} problem(s).\n`);
   process.exit(1);
@@ -162,18 +130,16 @@ const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0'
 writeFileSync('package.json', read('package.json').replace(/^(  "version": ").+(",)$/m, `$1${version}$2`));
 writeFileSync('herdr-plugin.toml', read('herdr-plugin.toml').replace(/^version = ".+"$/m, `version = "${version}"`));
 writeFileSync('CHANGELOG.md', promote(read('CHANGELOG.md'), version, today));
-syncDocs(count, { write: true });
 process.stdout.write(`\nWrote version ${version} and promoted the CHANGELOG to ${today}.\n`);
 
 // test/release.test.js is what proves the promotion left a consistent tree.
-const after = testCount();
-if (after === null) {
+if (!suitePasses()) {
   process.stdout.write('\nThe edited tree does not pass. Files are written but nothing was committed.\n');
   process.exit(1);
 }
-process.stdout.write(`Re-checked: ${after} tests passing.\n`);
+process.stdout.write('Re-checked: suite passing.\n');
 
-git('add', 'package.json', 'herdr-plugin.toml', 'CHANGELOG.md', ...DOC_FILES);
+git('add', 'package.json', 'herdr-plugin.toml', 'CHANGELOG.md');
 execFileSync('git', ['commit', '-m', `Release v${version}\n\nSee CHANGELOG.md for the full notes.`], { stdio: 'inherit' });
 git('tag', '-a', `v${version}`, '-m', `v${version}`);
 

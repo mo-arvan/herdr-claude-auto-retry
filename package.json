@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "test": "node --test test/*.test.js",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-lines=88 --test-coverage-branches=82 --test-coverage-functions=88 test/*.test.js",
     "scan": "node scripts/scan-private.mjs",
     "preflight": "node scripts/release.mjs --check",
     "release": "node scripts/release.mjs"
