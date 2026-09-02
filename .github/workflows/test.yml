@@ -23,6 +23,9 @@ jobs:
           node-version: ${{ matrix.node-version }}
       # Zero runtime deps and Node's built-in test runner, so no install step.
       - run: npm run coverage
+        if: matrix.node-version == 22
+      - run: npm test
+        if: matrix.node-version != 22
 
   manifest:
     name: validate herdr-plugin.toml
