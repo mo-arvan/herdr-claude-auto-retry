@@ -2,7 +2,7 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-09-02
 
 - A rate-limit resume is never sent to a pane herdr still reports as working; the wait is re-checked until the pane stops. Previously a wait armed while the pane was idle could fire Escape into a turn you had resumed by hand hours later.
 - `stop` signals only monitors whose lock is live, so a process id reused after a reboot is left alone.
@@ -67,3 +67,4 @@ herdr-claude-auto-retry is a herdr-native replacement for the unmaintained, tmux
 [1.0.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.0.0
 [1.1.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.1.0
 [1.2.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.2.0
+[1.3.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.3.0

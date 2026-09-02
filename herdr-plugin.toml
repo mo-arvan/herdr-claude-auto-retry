@@ -1,6 +1,6 @@
 id = "claude-auto-retry"
 name = "Claude Auto Retry"
-version = "1.2.0"
+version = "1.3.0"
 min_herdr_version = "0.7.5"
 description = "Wait out Anthropic rate limits and auto-resume Claude Code panes, herdr-native (no tmux, no shell wrapper)."
 platforms = ["linux", "macos"]
