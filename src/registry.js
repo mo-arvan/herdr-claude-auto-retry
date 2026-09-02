@@ -1,5 +1,5 @@
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, linkSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { monitorsDir } from './paths.js';
 
@@ -38,26 +38,33 @@ export function readRecord(terminalId) {
 export function claimSlot(rec) {
   mkdirSync(monitorsDir(), { recursive: true });
   const path = lockPath(rec.terminalId);
-  const body = JSON.stringify({ ...rec, updatedAtMs: rec.updatedAtMs ?? Date.now() }, null, 2);
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      writeFileSync(path, body, { flag: 'wx' });
-      return true;
-    } catch (err) {
-      if (err.code !== 'EEXIST') throw err;
-      const existing = readRecord(rec.terminalId);
-      if (isFresh(existing) && existing.pid !== rec.pid) return false;
-      removeRecord(rec.terminalId);
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ ...rec, updatedAtMs: rec.updatedAtMs ?? Date.now() }, null, 2));
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        linkSync(tmp, path);
+        return true;
+      } catch (err) {
+        if (err.code !== 'EEXIST') throw err;
+        const existing = readRecord(rec.terminalId);
+        if (isFresh(existing) && existing.pid !== rec.pid) return false;
+        removeRecord(rec.terminalId);
+      }
     }
+    return false;
+  } finally {
+    try { unlinkSync(tmp); } catch {}
   }
-  return false;
 }
 
 export function touchRecord(terminalId, patch = {}, ownerPid = process.pid) {
   const rec = readRecord(terminalId);
   if (!rec || rec.pid !== ownerPid) return;
   mkdirSync(monitorsDir(), { recursive: true });
-  writeFileSync(lockPath(terminalId), JSON.stringify({ ...rec, ...patch, updatedAtMs: Date.now() }, null, 2));
+  const tmp = `${lockPath(terminalId)}.${ownerPid}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ ...rec, ...patch, updatedAtMs: Date.now() }, null, 2));
+  renameSync(tmp, lockPath(terminalId));
 }
 
 export function removeRecord(terminalId) {

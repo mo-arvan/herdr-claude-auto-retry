@@ -176,7 +176,13 @@ test('one hook fire re-establishes coverage for all Claude panes (restart sweep)
 });
 
 // The D19 handoff, end to end: the monitor must WRITE its state, and nothing else may delete it before a successor reads it.
-const readLock = (t, file) => JSON.parse(readFileSync(join(t.procEnv.HERDR_PLUGIN_STATE_DIR, 'monitors', file), 'utf8'));
+const readLock = (t, file) => {
+  try {
+    return JSON.parse(readFileSync(join(t.procEnv.HERDR_PLUGIN_STATE_DIR, 'monitors', file), 'utf8'));
+  } catch {
+    return null;
+  }
+};
 
 test('a running monitor persists its episode state into the lock record', async () => {
   const t = setup();
