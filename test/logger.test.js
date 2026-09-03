@@ -4,16 +4,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
+const LOGGER = pathToFileURL(join(repo, 'src', 'logger.js')).href;
 
+// A fixed script; the module URL and the instant travel in the environment.
 function nameAt(iso, tz) {
-  const src = join(repo, 'src', 'logger.js');
   return execFileSync(
     process.execPath,
-    ['-e', `import(${JSON.stringify(src)}).then((m) => process.stdout.write(m.logFileName(new Date(${JSON.stringify(iso)}))))`],
-    { env: { ...process.env, TZ: tz }, encoding: 'utf8' },
+    ['-e', 'import(process.env.LOGGER).then((m) => process.stdout.write(m.logFileName(new Date(process.env.AT))))'],
+    { env: { ...process.env, TZ: tz, LOGGER, AT: iso }, encoding: 'utf8' },
   );
 }
 
