@@ -2,7 +2,7 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.1] - 2026-09-30
 
 - Retired. Claude Code 2.1.234 and later continues a session automatically when a usage limit resets, and 2.1.199 and later retries transient server errors itself, so this plugin is no longer needed and can interfere: the Escape it sends at reset time cancels Claude's own automatic wait. Uninstall with `herdr plugin uninstall claude-auto-retry`. No further releases are planned.
 - The README said plugin actions could be run from a herdr menu. herdr has no action menu; run them from the CLI or a keybinding.
@@ -73,3 +73,4 @@ herdr-claude-auto-retry is a herdr-native replacement for the unmaintained, tmux
 [1.1.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.1.0
 [1.2.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.2.0
 [1.3.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.3.0
+[1.3.1]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.3.1
