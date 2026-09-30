@@ -2,6 +2,11 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Claude Code's own on-screen rows no longer arm a wait. The `/resume` session picker and the status-line hint row spell out phrases like `rate limited — wait and retry` and `You've hit your session limit` as plain help text; opening `/resume` while a monitor was running could park it for hours on a limit that never happened, and a parked monitor stops watching the screen, so the next real limit was missed too. Reported and fixed by @Andre1Becker (#6, #7).
+- The Claude wording check no longer fails on Linux: grep could not open `/dev/stdin` there, so every anchor was reported missing on a healthy install, and a grep failure now fails as one instead of as a wording change. Fixed by @Andre1Becker (#8).
+
 ## [1.3.1] - 2026-09-30
 
 - Retired. Claude Code 2.1.234 and later continues a session automatically when a usage limit resets, and 2.1.199 and later retries transient server errors itself, so this plugin is no longer needed and can interfere: the Escape it sends at reset time cancels Claude's own automatic wait. Uninstall with `herdr plugin uninstall claude-auto-retry`. No further releases are planned.

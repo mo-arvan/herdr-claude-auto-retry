@@ -310,6 +310,42 @@ test('an OSC title sequence carrying limit text does not leak into detection', (
   assert.equal(classifyLimit(raw), null);
 });
 
+// Claude Code draws its own chrome on ✻ rows: the spinner, the /resume session
+// picker, and the status-line hint. The picker and the hint quote "rate limited",
+// "wait and retry" and "You've hit your session limit" as literal text.
+
+test('a /resume picker row whose summary says "rate limited" must not arm a wait', () => {
+  const text = pane(
+    '⏺ Done. The suite is green.',
+    '',
+    '✻ 2026-09-07-08.48                          rate limited — wait and re…          7d',
+    '✻ 2026-09-06-19.02                          fix the adapter timeout             8d',
+    '',
+    '❯',
+  );
+  assert.equal(classifyLimit(text), null);
+});
+
+test("the status-line hint row quoting both trigger phrases must not arm a wait", () => {
+  const text = pane(
+    '⏺ Ready.',
+    '',
+    "✻ Model, directory, git branch, context and limits  rate limited — wait and retry · You've hit your session limit · resets 1:30pm",
+    '',
+    '❯',
+  );
+  assert.equal(classifyLimit(text), null);
+});
+
+test('filtering chrome does not hide a real banner in the same frame', () => {
+  const text = pane(
+    "⏺ You've hit your session limit · resets 3pm (America/Chicago)",
+    '✻ Cerebrating… (23s · esc to interrupt)',
+  );
+  assert.equal(classifyLimit(text), 'reset');
+  assert.equal(findRateLimitMessage(text), "⏺ You've hit your session limit · resets 3pm (America/Chicago)");
+});
+
 // ---------------------------------------------------------------------------
 // Transient API failures.
 // ---------------------------------------------------------------------------

@@ -58,6 +58,7 @@ const OUTPUT_LINE = /^\s*[⏺⎿]/u;
 const AGENT_LINE = /^\s*⏺/u;
 const NON_OUTPUT_LINE = /^\s*[⏺⎿❯>]/u;
 const PROMPT_LINE = /^\s*[❯>]/u;
+const CHROME_LINE = /^\s*✻/u;
 const THINKING_LINE = /^\s*\S{0,2}\s*\w+\s+for\s+\d+m?\s?\d*s\b/i;
 
 function outputBlockBounds(lines) {
@@ -95,7 +96,7 @@ export function latestOutputBlock(text) {
 
 function detectionRegion(lines) {
   const bounds = outputBlockBounds(lines);
-  return lines.slice(bounds ? bounds.start : 0).filter((l) => !PROMPT_LINE.test(l));
+  return lines.slice(bounds ? bounds.start : 0).filter((l) => !PROMPT_LINE.test(l) && !CHROME_LINE.test(l));
 }
 
 function compile(customPatterns) {
