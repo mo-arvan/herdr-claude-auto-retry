@@ -4,6 +4,9 @@
 
 > Wait out Anthropic rate limits and auto-resume Claude Code, the herdr-native way: no tmux, no shell wrapper.
 
+> [!IMPORTANT]
+> **Retired.** Claude Code now does this itself. Since 2.1.234 it continues a session automatically when a usage limit resets (on by default; toggle it in `/config` under "Continue automatically at usage limit"), and since 2.1.199 it retries transient server errors with backoff. Running this plugin alongside it is worse than not running it: its Escape at reset time is Claude's own key for cancelling the automatic wait. Uninstall with `herdr plugin uninstall claude-auto-retry`. The repository is archived and kept for reference.
+
 Claude Code stops when it hits an Anthropic rate limit or a transient server error (a throttle, an overload, a 5xx, a dropped connection). This [herdr](https://herdr.dev) plugin waits the limit out and resumes the session for you. You come back to find the work continued. It is a herdr-native rewrite of the unmaintained, tmux-based [`claude-auto-retry`](https://github.com/cheapestinference/claude-auto-retry).
 
 ## Install
@@ -33,7 +36,7 @@ herdr plugin action invoke claude-auto-retry.stop        # stop all monitors
 herdr plugin action invoke claude-auto-retry.logs        # recent log lines
 ```
 
-Every herdr CLI call wraps its output in a JSON envelope, so `status` and `logs` read cleanest from herdr's UI (menu or keybinding). To read monitor activity as plain text from a shell, tail the log file directly (under herdr's plugin state directory):
+Every herdr CLI call wraps its output in a JSON envelope, so `status` and `logs` read cleanest through a herdr keybinding (`[[keys.command]]` with `type = "plugin_action"`). To read monitor activity as plain text from a shell, tail the log file directly (under herdr's plugin state directory):
 
 ```bash
 tail -f ~/.local/state/herdr/plugins/claude-auto-retry/logs/*.log

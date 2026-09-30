@@ -2,6 +2,11 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Retired. Claude Code 2.1.234 and later continues a session automatically when a usage limit resets, and 2.1.199 and later retries transient server errors itself, so this plugin is no longer needed and can interfere: the Escape it sends at reset time cancels Claude's own automatic wait. Uninstall with `herdr plugin uninstall claude-auto-retry`. No further releases are planned.
+- The README said plugin actions could be run from a herdr menu. herdr has no action menu; run them from the CLI or a keybinding.
+
 ## [1.3.0] - 2026-09-02
 
 - A rate-limit resume is never sent to a pane herdr still reports as working; the wait is re-checked until the pane stops. Previously a wait armed while the pane was idle could fire Escape into a turn you had resumed by hand hours later.
