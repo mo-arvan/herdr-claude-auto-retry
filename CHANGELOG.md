@@ -2,7 +2,7 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.2] - 2026-09-30
 
 - Claude Code's own on-screen rows no longer arm a wait. The `/resume` session picker and the status-line hint row spell out phrases like `rate limited — wait and retry` and `You've hit your session limit` as plain help text; opening `/resume` while a monitor was running could park it for hours on a limit that never happened, and a parked monitor stops watching the screen, so the next real limit was missed too. Reported and fixed by @Andre1Becker (#6, #7).
 - The Claude wording check no longer fails on Linux: grep could not open `/dev/stdin` there, so every anchor was reported missing on a healthy install, and a grep failure now fails as one instead of as a wording change. Fixed by @Andre1Becker (#8).
@@ -79,3 +79,4 @@ herdr-claude-auto-retry is a herdr-native replacement for the unmaintained, tmux
 [1.2.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.2.0
 [1.3.0]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.3.0
 [1.3.1]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.3.1
+[1.3.2]: https://github.com/mo-arvan/herdr-claude-auto-retry/releases/tag/v1.3.2
