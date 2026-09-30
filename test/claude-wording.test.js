@@ -24,7 +24,11 @@ try {
 const skip = binary ? false : 'claude binary not on PATH';
 
 test('every wording anchor the detectors rely on is still in the installed Claude Code', { skip }, () => {
-  const found = spawnSync('grep', ['-a', '-o', '-F', '-f', '/dev/stdin', binary], { input: ANCHORS.join('\n'), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const args = ['-a', '-o', '-F'];
+  for (const anchor of ANCHORS) args.push('-e', anchor);
+  const found = spawnSync('grep', [...args, binary], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  assert.equal(found.error, undefined, `grep did not run: ${found.error && found.error.message}`);
+  assert.notEqual(found.status, 2, `grep failed: ${(found.stderr || '').trim()}`);
   const present = new Set(found.stdout.split('\n'));
   const missing = ANCHORS.filter((a) => !present.has(a));
   assert.deepEqual(missing, [], `wording no longer found in ${binary}`);
